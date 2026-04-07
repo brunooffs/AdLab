@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  PR Quality Checks
+#  Runs on every PR — faster feedback loop than the full CI pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ── Quick sanity check on the API ─────────────────────────────────────────
+  api-check:
+    name: API — type check + build test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install deps
+        working-directory: api
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: api
+        run: npx prisma generate
+
+      - name: TypeScript type check
+        working-directory: api
+        run: npx tsc --noEmit
+
+      - name: Validate Kong config
+        run: |
+          # Check kong.yml is valid YAML
+          python3 -c "
+          import yaml, sys
+          try:
+              yaml.safe_load(open('kong/kong.yml'))
+              print('kong.yml is valid YAML')
+          except Exception as e:
+              print(f'kong.yml parse error: {e}')
+              sys.exit(1)
+          "
+
+      - name: Validate Prometheus config
+        run: |
+          python3 -c "
+          import yaml, sys
+          try:
+              yaml.safe_load(open('prometheus/prometheus.yml'))
+              print('prometheus.yml is valid YAML')
+          except Exception as e:
+              print(f'prometheus.yml parse error: {e}')
+              sys.exit(1)
+          "
+
+      - name: Check docker-compose syntax
+        run: docker compose config --quiet && echo "docker-compose.yml is valid"

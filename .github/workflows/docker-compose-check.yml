@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Infrastructure checks
+#  Validates all config files on every push
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Infrastructure Checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose.yml'
+      - 'kong/**'
+      - 'prometheus/**'
+      - 'grafana/**'
+  pull_request:
+    paths:
+      - 'docker-compose.yml'
+      - 'kong/**'
+      - 'prometheus/**'
+      - 'grafana/**'
+
+jobs:
+
+  validate-configs:
+    name: Validate config files
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet && echo "docker-compose.yml OK"
+
+      - name: Validate kong/kong.yml
+        run: |
+          python3 -c "
+          import yaml
+          data = yaml.safe_load(open('kong/kong.yml'))
+          assert '_format_version' in data, 'Missing _format_version'
+          assert 'services' in data, 'Missing services'
+          print(f'kong.yml OK — {len(data[\"services\"])} service(s) defined')
+          "
+
+      - name: Validate prometheus/prometheus.yml
+        run: |
+          python3 -c "
+          import yaml
+          data = yaml.safe_load(open('prometheus/prometheus.yml'))
+          assert 'scrape_configs' in data, 'Missing scrape_configs'
+          jobs = [s['job_name'] for s in data['scrape_configs']]
+          print(f'prometheus.yml OK — jobs: {jobs}')
+          "
+
+      - name: Validate grafana datasource
+        run: |
+          python3 -c "
+          import yaml
+          data = yaml.safe_load(open('grafana/provisioning/datasources/prometheus.yml'))
+          assert 'datasources' in data, 'Missing datasources'
+          print('grafana datasource OK')
+          "
