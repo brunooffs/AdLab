@@ -1,0 +1,86 @@
+{
+  "title": "AdLab — API Overview",
+  "uid": "adlab-overview",
+  "timezone": "browser",
+  "refresh": "10s",
+  "schemaVersion": 36,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "sum(rate(kong_http_requests_total[1m])) by (service)",
+        "legendFormat": "{{ service }}"
+      }],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Request latency p99 (ms)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "histogram_quantile(0.99, sum(rate(kong_request_latency_ms_bucket[5m])) by (le, service))",
+        "legendFormat": "p99 {{ service }}"
+      }],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 3,
+      "title": "HTTP status codes",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "sum(rate(kong_http_requests_total[1m])) by (code)",
+        "legendFormat": "HTTP {{ code }}"
+      }],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "HTTP 2xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "#1D9E75", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "HTTP 4xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "#BA7517", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "HTTP 5xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "#E24B4A", "mode": "fixed" } }] }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "title": "Error rate %",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 8, "w": 6, "h": 8 },
+      "targets": [{
+        "expr": "sum(rate(kong_http_requests_total{code=~'5..'}[5m])) / sum(rate(kong_http_requests_total[5m])) * 100"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Total requests",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 8, "w": 6, "h": 8 },
+      "targets": [{
+        "expr": "sum(kong_http_requests_total)"
+      }],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    }
+  ]
+}

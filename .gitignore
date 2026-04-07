@@ -1,0 +1,8 @@
+node_modules/
+.env
+*.log
+dist/
+.DS_Store
+spark-jobs/__pycache__/
+*.pyc
+.venv/

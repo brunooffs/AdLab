@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Advertiser {
+  id         String     @id @default(cuid())
+  name       String
+  email      String     @unique
+  tier       Tier       @default(STANDARD)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  campaigns  Campaign[]
+}
+
+model Campaign {
+  id           String     @id @default(cuid())
+  name         String
+  advertiserId String
+  advertiser   Advertiser @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
+  budget       Float
+  startDate    DateTime
+  endDate      DateTime?
+  status       Status     @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+enum Tier {
+  STANDARD
+  PREMIUM
+}
+
+enum Status {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}

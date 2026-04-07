@@ -1,0 +1,5 @@
+{"type":"index-pattern","id":"clickstream_raw","attributes":{"title":"clickstream_raw","timeFieldName":"event_time"}}
+{"type":"index-pattern","id":"agg_events_by_type","attributes":{"title":"agg_events_by_type","timeFieldName":"window_start"}}
+{"type":"index-pattern","id":"agg_events_by_page","attributes":{"title":"agg_events_by_page","timeFieldName":"window_start"}}
+{"type":"index-pattern","id":"agg_events_by_country","attributes":{"title":"agg_events_by_country","timeFieldName":"window_start"}}
+{"type":"index-pattern","id":"agg_events_by_device","attributes":{"title":"agg_events_by_device","timeFieldName":"window_start"}}

@@ -1,0 +1,9 @@
+# Producer dependencies
+kafka-python==2.0.2
+faker==25.2.0
+
+# ES query / setup script dependencies
+requests==2.32.3
+
+# Optional: run producer with extra performance
+ujson==5.10.0

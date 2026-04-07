@@ -1,0 +1,45 @@
+{
+  "version": "1",
+  "objects": [
+    {
+      "type": "index-pattern",
+      "id": "clickstream-raw-events",
+      "attributes": {
+        "title": "clickstream-raw-events",
+        "timeFieldName": "event_time"
+      }
+    },
+    {
+      "type": "index-pattern",
+      "id": "clickstream-clicks-per-page",
+      "attributes": {
+        "title": "clickstream-clicks-per-page",
+        "timeFieldName": "window_start"
+      }
+    },
+    {
+      "type": "index-pattern",
+      "id": "clickstream-events-by-type",
+      "attributes": {
+        "title": "clickstream-events-by-type",
+        "timeFieldName": "window_start"
+      }
+    },
+    {
+      "type": "index-pattern",
+      "id": "clickstream-events-by-country",
+      "attributes": {
+        "title": "clickstream-events-by-country",
+        "timeFieldName": "window_start"
+      }
+    },
+    {
+      "type": "index-pattern",
+      "id": "clickstream-events-by-device",
+      "attributes": {
+        "title": "clickstream-events-by-device",
+        "timeFieldName": "window_start"
+      }
+    }
+  ]
+}
