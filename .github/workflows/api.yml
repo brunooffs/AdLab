@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #  AdLab API — CI/CD Pipeline
 #  Triggers: push to main, PRs to main
-#  Jobs: lint → typecheck → build → push to GHCR → deploy
+#  Jobs: lint → typecheck → build → push to GHCR → deploy (disabled locally)
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: API CI/CD
@@ -56,12 +56,11 @@ jobs:
     name: Build & Push Image
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
-    # Only push on main branch — not on PRs
     if: github.ref == 'refs/heads/main'
 
     permissions:
       contents: read
-      packages: write   # needed to push to GHCR
+      packages: write
 
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
@@ -74,7 +73,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          # BuildKit — parallel layer builds, better caching
           driver-opts: image=moby/buildkit:latest
 
       - name: Log in to GitHub Container Registry
@@ -82,7 +80,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}   # auto-provided by GitHub
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata (tags + labels)
         id: meta
@@ -90,11 +88,8 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            # Tag with git SHA for exact traceability
             type=sha,prefix=sha-,format=short
-            # Tag with branch name
             type=ref,event=branch
-            # Tag latest on main
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push
@@ -106,8 +101,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/arm64,linux/amd64   # M1 + standard servers
-          cache-from: type=gha                  # GitHub Actions cache
+          platforms: linux/arm64,linux/amd64
+          cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Image summary
@@ -117,18 +112,16 @@ jobs:
           echo "**Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo "**Digest:** ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
 
-  # ── Job 3: Deploy (only on main) ─────────────────────────────────────────
+  # ── Job 3: Deploy — disabled for local lab ───────────────────────────────
+  # Enable this when deploying to a real server (AWS EC2, VPS, EKS)
+  # Add secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY
   deploy:
     name: Deploy to Lab
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.ref == 'refs/heads/main'
-    environment: lab   # requires manual approval in GitHub settings (optional)
+    if: false   # ← disabled until Phase 3 AWS deployment
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -137,15 +130,8 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd ~/Creations/Python-Lab
-
-            # Pull the new image
             docker pull ghcr.io/brunooffs/adlab-api:latest
-
-            # Update just the API — zero downtime for other services
             docker compose up -d --no-deps api
-
-            # Verify it came back healthy
             sleep 5
             curl -sf http://localhost:3000/health || exit 1
-
             echo "Deploy complete — $(date)"
