@@ -240,7 +240,7 @@ def main():
         ),
     ]
 
-    print(f"Streaming {len(queries)} queries to Elasticsearch. Awaiting termination...")
+    print(f"Streaming {len(queries)} queries to Elasticsearch. Awaiting termination... - clickstream_streaming.py:243")
     spark.streams.awaitAnyTermination()
 
 

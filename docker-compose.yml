@@ -1,12 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  Clickstream + AdLab — M1/Apple Silicon (arm64)
-#  Kafka · Spark · Elasticsearch · Kibana · Cassandra
-#  PostgreSQL · MongoDB · Keycloak · Node.js API
+#  AdLab — M1 32GB optimised
+#  Docker Desktop memory limit: 16GB recommended
+#  Total target: ~10GB RAM — gives all services room to breathe
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
-  # ── Kafka (KRaft) ───────────────────────────────────────────────────────────
+  # ── Kafka (KRaft) ──────────────────────────────────────────────────────────
   kafka:
     image: apache/kafka:3.8.0
     container_name: kafka
@@ -28,6 +28,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
     volumes:
       - kafka_data:/var/lib/kafka/data
     networks:
@@ -39,9 +40,9 @@ services:
       retries: 6
       start_period: 30s
 
-  # ── Kafka UI ────────────────────────────────────────────────────────────────
+  # ── Kafka UI ───────────────────────────────────────────────────────────────
   kafka-ui:
-    image: ghcr.io/kafbat/kafka-ui:latest
+    image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     restart: unless-stopped
     depends_on:
@@ -52,10 +53,11 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      JAVA_OPTS: "-Xmx256m"
     networks:
       - pipeline
 
-  # ── Elasticsearch ───────────────────────────────────────────────────────────
+  # ── Elasticsearch ──────────────────────────────────────────────────────────
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     container_name: elasticsearch
@@ -63,7 +65,7 @@ services:
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"       # 1GB heap — solid for lab
       bootstrap.memory_lock: "true"
     ulimits:
       memlock:
@@ -82,7 +84,7 @@ services:
       retries: 6
       start_period: 40s
 
-  # ── Kibana ──────────────────────────────────────────────────────────────────
+  # ── Kibana ─────────────────────────────────────────────────────────────────
   kibana:
     image: docker.elastic.co/kibana/kibana:8.13.4
     container_name: kibana
@@ -95,10 +97,11 @@ services:
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
       xpack.security.enabled: "false"
+      NODE_OPTIONS: "--max-old-space-size=1024"   # 1GB Node heap
     networks:
       - pipeline
 
-  # ── Spark Master ────────────────────────────────────────────────────────────
+  # ── Spark Master ───────────────────────────────────────────────────────────
   spark-master:
     image: apache/spark:3.5.3
     container_name: spark-master
@@ -110,6 +113,7 @@ services:
       SPARK_MASTER_PORT: 7077
       SPARK_MASTER_WEBUI_PORT: 8081
       SPARK_NO_DAEMONIZE: "true"
+      SPARK_DAEMON_MEMORY: 512m
     ports:
       - "7077:7077"
       - "8081:8081"
@@ -125,7 +129,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # ── Spark Worker ────────────────────────────────────────────────────────────
+  # ── Spark Worker ───────────────────────────────────────────────────────────
   spark-worker:
     image: apache/spark:3.5.3
     container_name: spark-worker
@@ -133,10 +137,11 @@ services:
     command: >
       /bin/bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /opt/spark/logs/*"
     environment:
-      SPARK_WORKER_CORES: 2
-      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_CORES: 2              # 2 cores
+      SPARK_WORKER_MEMORY: 2g            # 2GB worker memory
       SPARK_WORKER_WEBUI_PORT: 8082
       SPARK_NO_DAEMONIZE: "true"
+      SPARK_DAEMON_MEMORY: 512m
     depends_on:
       spark-master:
         condition: service_healthy
@@ -148,7 +153,7 @@ services:
     networks:
       - pipeline
 
-  # ── Cassandra ───────────────────────────────────────────────────────────────
+  # ── Cassandra ──────────────────────────────────────────────────────────────
   cassandra:
     image: cassandra:4.1
     container_name: cassandra
@@ -168,12 +173,12 @@ services:
       - pipeline
     healthcheck:
       test: ["CMD-SHELL", "nodetool status | grep -q 'UN'"]
-      interval: 20s
+      interval: 30s
       timeout: 10s
       retries: 8
-      start_period: 60s
+      start_period: 90s
 
-  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: postgres
@@ -194,7 +199,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── MongoDB ─────────────────────────────────────────────────────────────────
+  # ── MongoDB ────────────────────────────────────────────────────────────────
   mongodb:
     image: mongo:7
     container_name: mongodb
@@ -215,28 +220,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Keycloak (OAuth2 / OIDC) ────────────────────────────────────────────────
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0
-    container_name: keycloak
-    restart: unless-stopped
-    command: start-dev
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/adlab
-      KC_DB_USERNAME: lab
-      KC_DB_PASSWORD: labpass
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
-    ports:
-      - "8180:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - pipeline
-
-  # ── Redis ───────────────────────────────────────────────────────────────────
+  # ── Redis ──────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -247,14 +231,47 @@ services:
       - redis_data:/data
     networks:
       - pipeline
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    command: redis-server --appendonly yes
 
-  # ── Node.js API ─────────────────────────────────────────────────────────────
+  # ── Kong API Gateway ───────────────────────────────────────────────────────
+  kong:
+    image: kong:3.7-ubuntu
+    container_name: kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_PLUGINS: bundled
+      KONG_NGINX_WORKER_PROCESSES: 2
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - pipeline
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── Node.js API ────────────────────────────────────────────────────────────
   api:
     build:
       context: ./api
@@ -270,9 +287,10 @@ services:
       MONGO_URL: mongodb://lab:labpass@mongodb:27017/adlab?authSource=admin
       REDIS_URL: redis://redis:6379
       ES_URL: http://elasticsearch:9200
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: adlab
-      KEYCLOAK_CLIENT_ID: api
+      NODE_OPTIONS: "--max-old-space-size=512"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_SERVICE_NAME: adlab-api
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=local
     depends_on:
       postgres:
         condition: service_healthy
@@ -288,39 +306,7 @@ services:
     networks:
       - pipeline
 
-  # ── Kong API Gateway ─────────────────────────────────────────────────────────
-  kong:
-    image: kong:3.7-ubuntu
-    container_name: kong
-    restart: unless-stopped
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml    # ← change this too
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
-      KONG_PROXY_LISTEN: "0.0.0.0:8000"
-      KONG_PLUGINS: bundled
-    ports:
-      - "8000:8000"
-      - "8001:8001"
-    volumes:
-      - ./kong/kong.yml:/etc/kong/kong.yml:ro        # ← change destination
-    depends_on:
-      api:
-        condition: service_started
-    networks:
-      - pipeline
-    healthcheck:
-      test: ["CMD", "kong", "health"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
-
-  # ── Prometheus ───────────────────────────────────────────────────────────────
+  # ── Prometheus ─────────────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.52.0
     container_name: prometheus
@@ -337,41 +323,67 @@ services:
       - "--web.enable-lifecycle"
     networks:
       - pipeline
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
 
-  # ── Grafana ──────────────────────────────────────────────────────────────────
+  # ── Grafana ────────────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.3
     container_name: grafana
     restart: unless-stopped
     ports:
-      - "3001:3000"    # 3001 on host to avoid clash with Node API on 3000
+      - "3001:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_FEATURE_TOGGLES_ENABLE: publicDashboards
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     depends_on:
-      prometheus:
+      - prometheus
+    networks:
+      - pipeline
+
+
+  # ── Grafana Tempo — distributed tracing ───────────────────────────────────
+  tempo:
+    image: grafana/tempo:2.4.0
+    container_name: tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo.yml:ro
+      - tempo_data:/tmp/tempo
+    ports:
+      - "3200:3200"    # Tempo HTTP API + UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver (Node.js sends here)
+    networks:
+      - pipeline
+
+  # ── Keycloak ───────────────────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    restart: "no"
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: lab
+      KC_DB_PASSWORD: labpass
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      JAVA_OPTS_APPEND: "-Xms256m -Xmx512m"
+    ports:
+      - "8180:8080"
+    depends_on:
+      postgres:
         condition: service_healthy
     networks:
       - pipeline
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
 
-
-# ── Volumes ──────────────────────────────────────────────────────────────────
+# ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
   kafka_data:
   es_data:
@@ -382,8 +394,9 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+  tempo_data:
 
-# ── Network ──────────────────────────────────────────────────────────────────
+# ── Network ───────────────────────────────────────────────────────────────────
 networks:
   pipeline:
     driver: bridge

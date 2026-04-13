@@ -6,3 +6,15 @@ dist/
 spark-jobs/__pycache__/
 *.pyc
 .venv/
+# Python
+producer/.env
+producer/__pycache__/
+spark-jobs/__pycache__/
+*.pyc
+
+# Node
+api/node_modules/
+api/dist/
+
+# Mac
+.DS_Store

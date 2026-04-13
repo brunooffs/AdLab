@@ -1,3 +1,9 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  index.ts — AdLab API entrypoint
+//  IMPORTANT: tracer MUST be the first import — OTel patches at startup
+// ─────────────────────────────────────────────────────────────────────────────
+import './tracer'   // ← must be first
+
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
@@ -26,21 +32,21 @@ async function bootstrap() {
 
   await app.register(swagger, {
     openapi: {
-      info: { title: 'AdLab API', version: '1.0.0',
-              description: 'Ad Click Aggregator — Advertiser Dashboard API' },
-      servers: [{ url: 'http://localhost:8000', description: 'Via Kong (recommended)' },
-                { url: 'http://localhost:3000', description: 'Direct (dev only)' }],
-      components: {
-        securitySchemes: {
-          bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
-        }
-      }
+      info: {
+        title: 'AdLab API',
+        version: '1.0.0',
+        description: 'Ad Click Aggregator — Advertiser Dashboard API',
+      },
+      servers: [
+        { url: 'http://localhost:8000', description: 'Via Kong (recommended)' },
+        { url: 'http://localhost:3000', description: 'Direct (dev only)' },
+      ],
     }
   })
 
   await app.register(swaggerUi, {
     routePrefix: '/docs',
-    uiConfig: { docExpansion: 'list', deepLinking: false }
+    uiConfig: { docExpansion: 'list', deepLinking: false },
   })
 
   // Data layer
@@ -49,7 +55,7 @@ async function bootstrap() {
   await app.register(esPlugin)
   await app.register(mongoPlugin)
 
-  // Prometheus metrics — must register before routes
+  // Observability
   await app.register(metricsPlugin)
 
   // Routes
@@ -63,14 +69,16 @@ async function bootstrap() {
   // Health
   app.get('/health', async () => ({
     status: 'ok',
-    ts: new Date().toISOString()
+    ts: new Date().toISOString(),
   }))
 
   const port = Number(process.env.PORT || 3000)
   await app.listen({ port, host: '0.0.0.0' })
-  app.log.info(`Direct:  http://localhost:${port}`)
+
+  app.log.info(`Direct:   http://localhost:${port}`)
   app.log.info(`Via Kong: http://localhost:8000`)
-  app.log.info(`Metrics: http://localhost:${port}/metrics`)
+  app.log.info(`Docs:     http://localhost:${port}/docs`)
+  app.log.info(`Metrics:  http://localhost:${port}/metrics`)
 }
 
 bootstrap().catch(err => { console.error(err); process.exit(1) })
