@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  tracer.ts — OpenTelemetry SDK initialisation
+//  tracer.ts — OpenTelemetry SDK
 //  Must be the FIRST import in index.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -26,7 +26,6 @@ const sdk = new NodeSDK({
           return url === '/health' || url === '/metrics'
         },
       },
-      '@opentelemetry/instrumentation-fastify': { enabled: true },
       '@opentelemetry/instrumentation-pg':      { enabled: true },
       '@opentelemetry/instrumentation-ioredis': { enabled: true },
       '@opentelemetry/instrumentation-grpc':    { enabled: false },
@@ -36,11 +35,11 @@ const sdk = new NodeSDK({
 })
 
 sdk.start()
-console.log(`[OTel] Tracing started → ${TEMPO_ENDPOINT} (service: ${SERVICE_NAME}) - tracer.ts:39`)
+console.log(`[OTel] Tracing started → ${TEMPO_ENDPOINT} (service: ${SERVICE_NAME}) - tracer.ts:38`)
 
 process.on('SIGTERM', () => {
   sdk.shutdown()
-    .then(() => console.log('[OTel] Shut down - tracer.ts:43'))
+    .then(() => console.log('[OTel] Shut down - tracer.ts:42'))
     .catch(console.error)
 })
 
