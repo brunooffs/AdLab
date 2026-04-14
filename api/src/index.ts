@@ -1,8 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
-//  index.ts — AdLab API entrypoint
-//  IMPORTANT: tracer MUST be the first import — OTel patches at startup
-// ─────────────────────────────────────────────────────────────────────────────
-import './tracer'   // ← must be first
+import './tracer'   // ← must be first — OTel patches at startup
 
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
@@ -17,9 +13,10 @@ import { mongoPlugin }    from './plugins/mongo'
 import { graphqlPlugin }  from './plugins/graphql'
 import { metricsPlugin }  from './plugins/metrics'
 
-import { advertisersRoutes } from './routes/advertisers'
-import { campaignsRoutes }   from './routes/campaigns'
-import { metricsRoutes }     from './routes/metrics'
+import { advertisersRoutes }     from './routes/advertisers'
+import { advertisersCqrsRoutes } from './routes/advertisers.cqrs'
+import { campaignsRoutes }       from './routes/campaigns'
+import { metricsRoutes }         from './routes/metrics'
 
 const app = Fastify({ logger: true })
 
@@ -35,12 +32,18 @@ async function bootstrap() {
       info: {
         title: 'AdLab API',
         version: '1.0.0',
-        description: 'Ad Click Aggregator — Advertiser Dashboard API',
+        description: 'Ad Click Aggregator — CQRS + Event Sourcing pattern',
       },
       servers: [
-        { url: 'http://localhost:8000', description: 'Via Kong (recommended)' },
-        { url: 'http://localhost:3000', description: 'Direct (dev only)' },
+        { url: 'http://localhost:8000', description: 'Via Kong' },
+        { url: 'http://localhost:3000', description: 'Direct' },
       ],
+      tags: [
+        { name: 'advertisers',      description: 'Classic CRUD (Postgres only)' },
+        { name: 'advertisers-cqrs', description: 'CQRS pattern (writes→Postgres, reads→ES)' },
+        { name: 'campaigns',        description: 'Campaign management' },
+        { name: 'metrics',          description: 'Click analytics' },
+      ]
     }
   })
 
@@ -58,19 +61,22 @@ async function bootstrap() {
   // Observability
   await app.register(metricsPlugin)
 
-  // Routes
-  await app.register(advertisersRoutes, { prefix: '/v1/advertisers' })
-  await app.register(campaignsRoutes,   { prefix: '/v1/campaigns' })
-  await app.register(metricsRoutes,     { prefix: '/v1/metrics' })
+  // ── Routes ──────────────────────────────────────────────────────────────
 
-  // GraphQL
+  // Classic CRUD — original routes (Postgres read + write)
+  await app.register(advertisersRoutes,     { prefix: '/v1/advertisers' })
+
+  // CQRS pattern — separate read/write models
+  // Writes → PostgreSQL → DomainEvent → ES projection
+  // Reads  → Elasticsearch (fast, searchable, aggregatable)
+  await app.register(advertisersCqrsRoutes, { prefix: '/v1/cqrs/advertisers' })
+
+  await app.register(campaignsRoutes, { prefix: '/v1/campaigns' })
+  await app.register(metricsRoutes,   { prefix: '/v1/metrics' })
+
   await app.register(graphqlPlugin)
 
-  // Health
-  app.get('/health', async () => ({
-    status: 'ok',
-    ts: new Date().toISOString(),
-  }))
+  app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }))
 
   const port = Number(process.env.PORT || 3000)
   await app.listen({ port, host: '0.0.0.0' })
@@ -78,7 +84,7 @@ async function bootstrap() {
   app.log.info(`Direct:   http://localhost:${port}`)
   app.log.info(`Via Kong: http://localhost:8000`)
   app.log.info(`Docs:     http://localhost:${port}/docs`)
-  app.log.info(`Metrics:  http://localhost:${port}/metrics`)
+  app.log.info(`CQRS:     http://localhost:${port}/v1/cqrs/advertisers`)
 }
 
 bootstrap().catch(err => { console.error(err); process.exit(1) })
