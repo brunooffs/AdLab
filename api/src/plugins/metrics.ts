@@ -1,13 +1,10 @@
 import fp from 'fastify-plugin'
 import { FastifyPluginAsync } from 'fastify'
 
-// Simple Prometheus metrics without external lib
-// For production use @fastify/metrics or prom-client
-
-interface Counter { [key: string]: number }
+interface Counter   { [key: string]: number }
 interface Histogram { [key: string]: number[] }
 
-const counters: Counter = {}
+const counters:   Counter   = {}
 const histograms: Histogram = {}
 const startTime = Date.now()
 
@@ -54,10 +51,10 @@ function renderMetrics(): string {
     const name = key.split('{')[0]
     const labelsStr = key.slice(name.length)
     const sorted = [...vals].sort((a, b) => a - b)
-    const sum = sorted.reduce((a, b) => a + b, 0)
-    const p50 = sorted[Math.floor(sorted.length * 0.5)] || 0
-    const p95 = sorted[Math.floor(sorted.length * 0.95)] || 0
-    const p99 = sorted[Math.floor(sorted.length * 0.99)] || 0
+    const sum    = sorted.reduce((a, b) => a + b, 0)
+    const p50    = sorted[Math.floor(sorted.length * 0.50)] || 0
+    const p95    = sorted[Math.floor(sorted.length * 0.95)] || 0
+    const p99    = sorted[Math.floor(sorted.length * 0.99)] || 0
     try {
       const labels = JSON.parse(labelsStr)
       const lp = Object.entries(labels).map(([k, v]) => `${k}="${v}"`).join(',')
@@ -74,16 +71,15 @@ function renderMetrics(): string {
 
 const metricsPlugin: FastifyPluginAsync = fp(async (app) => {
 
-  // Hook — record every request
   app.addHook('onResponse', async (req, reply) => {
     const duration = reply.elapsedTime
-    const route = req.routerPath || req.url
+    // routerPath removed in Fastify 5 — use routeOptions.url instead
+    const route = req.routeOptions?.url ?? req.url
     recordRequest(req.method, route, reply.statusCode, duration)
   })
 
-  // GET /metrics — Prometheus scrape endpoint
   app.get('/metrics', {
-    schema: { hide: true }  // hide from Swagger
+    schema: { hide: true }
   }, async (_req, reply) => {
     reply.header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
     return reply.send(renderMetrics())
@@ -93,4 +89,3 @@ const metricsPlugin: FastifyPluginAsync = fp(async (app) => {
 })
 
 export { metricsPlugin }
-

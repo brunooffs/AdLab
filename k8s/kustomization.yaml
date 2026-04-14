@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  kustomization.yaml — root kustomize config
+#  ArgoCD uses this to discover and apply all manifests
+#  kubectl apply -k k8s/   applies everything in order
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: adlab
+
+resources:
+  # Foundation
+  - base/namespace.yaml
+  - base/configmap.yaml
+  - base/secrets.yaml
+
+  # Data layer — order matters (API depends on these)
+  - postgres/postgres.yaml
+  - redis/redis.yaml
+  - elasticsearch/elasticsearch.yaml
+
+  # Application layer
+  - api/api.yaml
+  - api/ingress.yaml

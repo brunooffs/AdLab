@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  argocd-app.yaml — ArgoCD Application definition
+#
+#  This tells ArgoCD:
+#    - WHERE to find the manifests (GitHub repo + path)
+#    - WHERE to deploy them (minikube cluster + namespace)
+#    - HOW to sync (automatic, self-healing, pruning)
+#
+#  Apply this AFTER ArgoCD is installed:
+#    kubectl apply -f k8s/argocd/argocd-app.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: adlab
+  namespace: argocd              # ArgoCD resources live in argocd namespace
+  labels:
+    app.kubernetes.io/name: adlab
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io   # clean up K8s resources on delete
+spec:
+  project: default
+
+  # ── Source — where manifests live ──────────────────────────────────────────
+  source:
+    repoURL:        https://github.com/brunooffs/adlab-lab.git
+    targetRevision: main           # track main branch
+    path:           k8s            # folder in repo containing manifests
+
+  # ── Destination — where to deploy ──────────────────────────────────────────
+  destination:
+    server:    https://kubernetes.default.svc   # minikube in-cluster
+    namespace: adlab
+
+  # ── Sync policy — GitOps automation ────────────────────────────────────────
+  syncPolicy:
+    automated:
+      prune:    true   # delete K8s resources removed from git
+      selfHeal: true   # revert manual kubectl changes (drift detection)
+    syncOptions:
+      - CreateNamespace=true      # create adlab namespace if missing
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration:    5s
+        factor:      2
+        maxDuration: 3m

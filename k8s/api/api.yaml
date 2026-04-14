@@ -1,0 +1,195 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  api.yaml — AdLab Node.js API Deployment
+#  Uses the image built and pushed by GitHub Actions to GHCR
+#  Image: ghcr.io/brunooffs/adlab-api:latest
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adlab-api
+  namespace: adlab
+  labels:
+    app: adlab-api
+    tier: backend
+    version: "1.0.0"
+  annotations:
+    # ArgoCD will update this when a new image is pushed
+    deployment.kubernetes.io/revision: "1"
+spec:
+  replicas: 2                    # 2 replicas — HA even in local lab
+  selector:
+    matchLabels:
+      app: adlab-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1                # spin up 1 extra pod during update
+      maxUnavailable: 0          # never reduce below desired count (zero downtime)
+  template:
+    metadata:
+      labels:
+        app: adlab-api
+        tier: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path:   "/metrics"
+        prometheus.io/port:   "3000"
+    spec:
+      # Wait for dependencies before starting
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z postgres 5432; do
+                echo "Waiting for postgres..."
+                sleep 2
+              done
+              echo "Postgres ready"
+        - name: wait-for-redis
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z redis 6379; do
+                echo "Waiting for redis..."
+                sleep 2
+              done
+              echo "Redis ready"
+        - name: wait-for-elasticsearch
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z elasticsearch 9200; do
+                echo "Waiting for elasticsearch..."
+                sleep 2
+              done
+              echo "Elasticsearch ready"
+
+      containers:
+        - name: adlab-api
+          image: ghcr.io/brunooffs/adlab-api:latest
+          imagePullPolicy: Always    # always pull latest from GHCR
+          ports:
+            - containerPort: 3000
+              name: http
+
+          # Load non-secret config from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: adlab-config
+
+          # Load secrets individually
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: adlab-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: adlab-secrets
+                  key: POSTGRES_PASSWORD
+            - name: REDIS_URL
+              value: "redis://redis:6379"
+            - name: MONGO_URL
+              value: "mongodb://$(MONGO_USERNAME):$(MONGO_PASSWORD)@mongodb:27017/adlab?authSource=admin"
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: adlab-secrets
+                  key: MONGO_USERNAME
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: adlab-secrets
+                  key: MONGO_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: adlab-secrets
+                  key: JWT_SECRET
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=256"
+
+          # Health checks
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+
+          # Resource limits — right-sized for M1 Pro local lab
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: 500m
+
+      # Pull from GHCR (public repo — no imagePullSecret needed)
+      # If repo is private, add:
+      # imagePullSecrets:
+      #   - name: ghcr-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adlab-api
+  namespace: adlab
+  labels:
+    app: adlab-api
+spec:
+  selector:
+    app: adlab-api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP
+---
+# ── HorizontalPodAutoscaler — scale based on CPU ──────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: adlab-api-hpa
+  namespace: adlab
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: adlab-api
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

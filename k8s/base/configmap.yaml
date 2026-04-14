@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  configmap.yaml — Shared non-secret configuration
+#  Secrets (passwords, keys) go in secrets.yaml — never in ConfigMaps
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: adlab-config
+  namespace: adlab
+data:
+  # PostgreSQL
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB:   adlab
+
+  # MongoDB
+  MONGO_HOST: mongodb
+  MONGO_PORT: "27017"
+  MONGO_DB:   adlab
+
+  # Redis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+  # Elasticsearch
+  ES_HOST: elasticsearch
+  ES_PORT: "9200"
+  ES_URL:  http://elasticsearch:9200
+
+  # Kafka
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_TOPIC:             clickstream
+
+  # API
+  NODE_ENV: production
+  PORT:     "3000"
+
+  # OpenTelemetry
+  OTEL_SERVICE_NAME:            adlab-api
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
