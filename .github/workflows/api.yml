@@ -1,9 +1,3 @@
-# ─────────────────────────────────────────────────────────────────────────────
-#  AdLab API — CI/CD Pipeline
-#  Triggers: push to main, PRs to main
-#  Jobs: lint → typecheck → build → push to GHCR → deploy (disabled locally)
-# ─────────────────────────────────────────────────────────────────────────────
-
 name: API CI/CD
 
 on:
@@ -18,22 +12,18 @@ on:
       - 'api/**'
 
 env:
-  REGISTRY: ghcr.io
+  REGISTRY:   ghcr.io
   IMAGE_NAME: ghcr.io/brunooffs/adlab-api
 
 jobs:
 
-  # ── Job 1: Lint + Type Check ──────────────────────────────────────────────
   lint-and-typecheck:
     name: Lint & Type Check
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -51,7 +41,6 @@ jobs:
         working-directory: api
         run: npx tsc --noEmit
 
-  # ── Job 2: Build & Push Docker image ─────────────────────────────────────
   build-and-push:
     name: Build & Push Image
     runs-on: ubuntu-latest
@@ -62,27 +51,20 @@ jobs:
       contents: read
       packages: write
 
-    outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      image-digest: ${{ steps.build.outputs.digest }}
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: image=moby/buildkit:latest
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags + labels)
+      - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -90,11 +72,11 @@ jobs:
           tags: |
             type=sha,prefix=sha-,format=short
             type=ref,event=branch
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=true
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./api
           file: ./api/Dockerfile
@@ -107,31 +89,7 @@ jobs:
 
       - name: Image summary
         run: |
-          echo "### Docker Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "### Docker Image Built ✓" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Tags:** ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo "**Digest:** ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
-
-  # ── Job 3: Deploy — disabled for local lab ───────────────────────────────
-  # Enable this when deploying to a real server (AWS EC2, VPS, EKS)
-  # Add secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY
-  deploy:
-    name: Deploy to Lab
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    if: false   # ← disabled until Phase 3 AWS deployment
-
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            cd ~/Creations/Python-Lab
-            docker pull ghcr.io/brunooffs/adlab-api:latest
-            docker compose up -d --no-deps api
-            sleep 5
-            curl -sf http://localhost:3000/health || exit 1
-            echo "Deploy complete — $(date)"

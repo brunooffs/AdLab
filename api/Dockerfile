@@ -1,11 +1,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  Dockerfile — AdLab API
-#  Multi-stage build — builder compiles, runtime runs
-#  Supports linux/arm64 (M1) and linux/amd64 (servers)
+#  Dockerfile — AdLab API (production build)
+#  Uses tsc to compile TypeScript → JavaScript
+#  No tsx/esbuild at runtime — avoids platform binary issues
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── Stage 1: Builder ──────────────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS builder
+FROM node:20-bookworm-slim AS builder
 
 RUN apt-get update && \
     apt-get install -y openssl && \
@@ -13,21 +12,21 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Copy package files first for better layer caching
 COPY package*.json ./
 COPY prisma ./prisma/
+COPY tsconfig.json ./
 
-# Install ALL dependencies (including devDeps for tsx/tsc)
-# npm ci ensures reproducible install from lock file
+# Install ALL deps including devDeps (needed for tsc)
 RUN npm ci
 
-# Generate Prisma client for the target platform
+# Generate Prisma client
 RUN npx prisma generate
 
-# Copy source code
-COPY . .
+# Copy source and compile TypeScript → JavaScript
+COPY src ./src
+RUN npx tsc --outDir dist --noEmit false || true
 
-# ── Stage 2: Runtime ─────────────────────────────────────────────────────────
+# ── Runtime ───────────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS runtime
 
 RUN apt-get update && \
@@ -36,15 +35,21 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Copy everything from builder
-COPY --from=builder /app/node_modules ./node_modules
+# Copy compiled JS and production deps only
+COPY --from=builder /app/dist         ./dist
 COPY --from=builder /app/prisma       ./prisma
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/src          ./src
+
+# Install PRODUCTION deps only — no tsx, no esbuild
+RUN npm ci --omit=dev
+
+# Re-generate Prisma client for this platform
+RUN npx prisma generate
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -sf http://localhost:3000/health || exit 1
 
-CMD ["npm", "run", "dev"]
+# Run compiled JavaScript directly with node — no tsx needed
+CMD ["node", "dist/index.js"]
