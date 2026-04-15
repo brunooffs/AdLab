@@ -1,41 +1,28 @@
-// ─────────────────────────────────────────────────────────────────────────────
-//  advertisers.cqrs.ts — CQRS-based advertiser routes
-//
-//  GET  routes → AdvertiserQueryHandler  (reads from Elasticsearch)
-//  POST/PATCH/DELETE routes → AdvertiserCommandHandler (writes to PostgreSQL)
-//
-//  The route layer only knows about Commands and Queries — it has no direct
-//  knowledge of Prisma or Elasticsearch. This is the key CQRS separation.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { AdvertiserCommandHandler } from '../handlers/advertiser.command.handler'
 import { AdvertiserQueryHandler }   from '../queries/advertiser.queries'
 import { AdvertiserReadProjector }  from '../handlers/advertiser.read.projector'
 
-// ── Validation schemas ────────────────────────────────────────────────────────
 const createSchema = z.object({
   name:  z.string().min(1).max(100),
   email: z.string().email(),
   tier:  z.enum(['STANDARD', 'PREMIUM']).default('STANDARD'),
 })
 
-const updateSchema = createSchema.partial()
+const updateSchema = z.object({
+  name:  z.string().min(1).max(100).optional(),
+  email: z.string().email().optional(),
+  tier:  z.enum(['STANDARD', 'PREMIUM']).optional(),
+})
 
 export async function advertisersCqrsRoutes(app: FastifyInstance) {
-
-  // Initialise CQRS handlers
   const commandHandler = new AdvertiserCommandHandler(app.prisma)
   const queryHandler   = new AdvertiserQueryHandler(app.es)
-
-  // Initialise read model projector — subscribes to domain events
-  // and syncs changes from Postgres → Elasticsearch automatically
   new AdvertiserReadProjector(app.es)
 
-  // ── QUERIES (reads from Elasticsearch) ──────────────────────────────────
+  // ── QUERIES ───────────────────────────────────────────────────────────────
 
-  // GET /v1/advertisers?search=...&tier=PREMIUM
   app.get('/', {
     schema: {
       tags: ['advertisers-cqrs'],
@@ -43,7 +30,7 @@ export async function advertisersCqrsRoutes(app: FastifyInstance) {
       querystring: {
         type: 'object',
         properties: {
-          search: { type: 'string', description: 'Full-text search' },
+          search: { type: 'string' },
           tier:   { type: 'string', enum: ['STANDARD', 'PREMIUM'] },
           from:   { type: 'integer', default: 0 },
           size:   { type: 'integer', default: 20 },
@@ -55,17 +42,14 @@ export async function advertisersCqrsRoutes(app: FastifyInstance) {
     return queryHandler.findAll({ search, tier, from, size })
   })
 
-  // GET /v1/advertisers/search?q=...
   app.get('/search', {
     schema: {
       tags: ['advertisers-cqrs'],
-      summary: '[CQRS Query] Full-text search with fuzzy matching',
+      summary: '[CQRS Query] Full-text search',
       querystring: {
         type: 'object',
         required: ['q'],
-        properties: {
-          q: { type: 'string' }
-        }
+        properties: { q: { type: 'string' } }
       }
     }
   }, async (req) => {
@@ -73,22 +57,14 @@ export async function advertisersCqrsRoutes(app: FastifyInstance) {
     return queryHandler.search(q)
   })
 
-  // GET /v1/advertisers/stats
   app.get('/stats', {
-    schema: {
-      tags: ['advertisers-cqrs'],
-      summary: '[CQRS Query] Aggregation stats from Elasticsearch',
-    }
+    schema: { tags: ['advertisers-cqrs'], summary: '[CQRS Query] Aggregation stats' }
   }, async () => {
     return queryHandler.countByTier()
   })
 
-  // GET /v1/advertisers/:id
   app.get('/:id', {
-    schema: {
-      tags: ['advertisers-cqrs'],
-      summary: '[CQRS Query] Get advertiser by ID from Elasticsearch',
-    }
+    schema: { tags: ['advertisers-cqrs'], summary: '[CQRS Query] Get by ID from ES' }
   }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const advertiser = await queryHandler.findById(id)
@@ -96,13 +72,12 @@ export async function advertisersCqrsRoutes(app: FastifyInstance) {
     return advertiser
   })
 
-  // ── COMMANDS (writes to PostgreSQL) ─────────────────────────────────────
+  // ── COMMANDS ──────────────────────────────────────────────────────────────
 
-  // POST /v1/advertisers
   app.post('/', {
     schema: {
       tags: ['advertisers-cqrs'],
-      summary: '[CQRS Command] Create advertiser → Postgres + ES projection',
+      summary: '[CQRS Command] Create → Postgres + ES projection',
       body: {
         type: 'object',
         required: ['name', 'email'],
@@ -118,7 +93,11 @@ export async function advertisersCqrsRoutes(app: FastifyInstance) {
     try {
       const result = await commandHandler.handle({
         type:    'CREATE_ADVERTISER',
-        payload: body,
+        payload: {
+          name:  body.name,
+          email: body.email,
+          tier:  body.tier,
+        },
       })
       return reply.status(201).send(result)
     } catch (err: any) {
@@ -129,12 +108,8 @@ export async function advertisersCqrsRoutes(app: FastifyInstance) {
     }
   })
 
-  // PATCH /v1/advertisers/:id
   app.patch('/:id', {
-    schema: {
-      tags: ['advertisers-cqrs'],
-      summary: '[CQRS Command] Update advertiser → Postgres + ES projection',
-    }
+    schema: { tags: ['advertisers-cqrs'], summary: '[CQRS Command] Update → Postgres + ES' }
   }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const body = updateSchema.parse(req.body)
@@ -152,12 +127,8 @@ export async function advertisersCqrsRoutes(app: FastifyInstance) {
     }
   })
 
-  // DELETE /v1/advertisers/:id
   app.delete('/:id', {
-    schema: {
-      tags: ['advertisers-cqrs'],
-      summary: '[CQRS Command] Delete advertiser → Postgres + ES projection',
-    }
+    schema: { tags: ['advertisers-cqrs'], summary: '[CQRS Command] Delete → Postgres + ES' }
   }, async (req, reply) => {
     const { id } = req.params as { id: string }
     try {
