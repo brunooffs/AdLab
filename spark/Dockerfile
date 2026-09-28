@@ -13,7 +13,7 @@ ARG SPARK_VERSION
 ARG SCALA_BINARY=2.12
 ARG KAFKA_CLIENTS_VERSION=3.4.1
 ARG COMMONS_POOL2_VERSION=2.11.1
-ARG ES_SPARK_VERSION=8.13.4
+ARG ES_SPARK_VERSION=8.19.22
 ARG MAVEN=https://repo1.maven.org/maven2
 
 ADD --chown=spark:spark --chmod=644 ${MAVEN}/org/apache/spark/spark-sql-kafka-0-10_${SCALA_BINARY}/${SPARK_VERSION}/spark-sql-kafka-0-10_${SCALA_BINARY}-${SPARK_VERSION}.jar /opt/spark/jars/
