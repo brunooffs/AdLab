@@ -4,7 +4,7 @@
 #  No tsx/esbuild at runtime — avoids platform binary issues
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM node:20-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
 
 RUN apt-get update && \
     apt-get install -y openssl && \
@@ -27,7 +27,7 @@ COPY src ./src
 RUN npx tsc --outDir dist --noEmit false
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 RUN apt-get update && \
     apt-get install -y openssl curl && \
