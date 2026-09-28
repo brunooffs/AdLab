@@ -316,7 +316,7 @@ services:
 
   # ── DB migrations (one-shot; api starts only after this succeeds) ──────────
   migrate:
-    image: adlab-api:local
+    image: adlab-migrate:local   # own tag: two services must not build to the same image name
     build:
       context: ./api
       dockerfile: Dockerfile
