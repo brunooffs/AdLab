@@ -168,7 +168,7 @@ services:
 
   # ── Cassandra ──────────────────────────────────────────────────────────────
   cassandra:
-    image: cassandra:4.1
+    image: cassandra:5.0.9
     container_name: cassandra
     profiles: ["extras"]
     ports:
@@ -406,7 +406,7 @@ services:
 
   # ── Keycloak ───────────────────────────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
+    image: quay.io/keycloak/keycloak:26.7.4
     container_name: keycloak
     profiles: ["extras"]
     restart: "no"
@@ -416,8 +416,8 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: lab
       KC_DB_PASSWORD: labpass
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       JAVA_OPTS_APPEND: "-Xms256m -Xmx512m"
     ports:
       - "127.0.0.1:8180:8080"
