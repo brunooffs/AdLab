@@ -54,7 +54,7 @@ services:
 
   # ── Kafka UI ───────────────────────────────────────────────────────────────
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0
     container_name: kafka-ui
     profiles: ["streaming"]
     depends_on:
