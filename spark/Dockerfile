@@ -4,9 +4,9 @@
 # Keep these versions consistent when you upgrade:
 #   spark-sql-kafka, spark-token-provider  -> the same version as SPARK_VERSION (Scala 2.12 build)
 #   kafka-clients, commons-pool2           -> the versions in Spark's own pom.xml
-#                                             (Spark 3.5.3 and 3.5.8 both use 3.4.1 and 2.11.1)
+#                                             (Spark 3.5.3, 3.5.8 and 3.5.9 all use 3.4.1 and 2.11.1)
 #   elasticsearch-spark                    -> the Elasticsearch version you run
-ARG SPARK_VERSION=3.5.3
+ARG SPARK_VERSION=3.5.9
 FROM apache/spark:${SPARK_VERSION}
 
 ARG SPARK_VERSION
