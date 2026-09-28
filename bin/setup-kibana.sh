@@ -17,7 +17,8 @@ GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 # Fail fast when targeting the local stack and the container simply is not running.
 case "$KIBANA" in
   http://localhost:*|http://127.0.0.1:*)
-    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^kibana$'; then
+    names=$(docker ps --format '{{.Names}}' 2>/dev/null || true)
+    if ! grep -qx kibana <<< "$names"; then
       echo -e "${RED}The kibana container is not running.${NC} Start it with:  ./start.sh analytics"
       exit 1
     fi ;;

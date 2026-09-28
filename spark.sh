@@ -2,9 +2,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #  spark.sh — Submit the Spark streaming job cleanly
 #  Kills any existing Spark apps before submitting
+#  Optional env: SPARK_APP (default adclick_streaming.py; adclick_runner.py adds RUN_SECONDS /
+#  STOP_FILE stop conditions), KAFKA_TOPIC (default clickstream)
 # ─────────────────────────────────────────────────────────────────────────────
 
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
+cd "$(dirname "$0")"
 
 echo -e "${CYAN}=== Spark Streaming Job ===${NC}\n"
 
@@ -65,7 +68,8 @@ echo -e "  Kafka:  kafka:9092/clickstream"
 echo -e "  ES:     http://elasticsearch:9200"
 echo -e "  JARs:   /opt/spark-apps/*.jar\n"
 
-docker exec spark-master /opt/spark/bin/spark-submit \
+docker exec -e PYTHONUNBUFFERED=1 -e RUN_SECONDS -e STOP_FILE -e KAFKA_TOPIC \
+  spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
   --jars \
     /opt/spark-apps/spark-sql-kafka.jar,\
@@ -75,6 +79,6 @@ docker exec spark-master /opt/spark/bin/spark-submit \
 /opt/spark-apps/commons-pool2.jar \
   --conf "spark.executor.memory=1g" \
   --conf "spark.driver.memory=512m" \
-  /opt/spark-apps/adclick_streaming.py
+  "/opt/spark-apps/${SPARK_APP:-adclick_streaming.py}"
 
 echo -e "\n${GREEN}Spark job finished.${NC}"

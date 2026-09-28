@@ -49,6 +49,9 @@ fi
 # Pure bash — needs neither lsof nor ss.
 port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
 
+# Is a container running? (No `docker ps | grep -q`: under pipefail it can report failure.)
+running() { local names; names=$(docker ps --format '{{.Names}}' 2>/dev/null) || return 1; grep -qx "$1" <<< "$names"; }
+
 # Ports each profile publishes on the host (core is always started).
 ports_for() {
   case "$1" in
@@ -62,7 +65,7 @@ ports_for() {
 }
 
 # Only check ports if AdLab is not already running (otherwise we'd flag ourselves).
-if ! docker ps --format '{{.Names}}' | grep -q '^api$'; then
+if ! running api; then
   busy=""
   for profile in core "$@"; do
     for port in $(ports_for "$profile"); do
