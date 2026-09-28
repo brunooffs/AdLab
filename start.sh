@@ -51,6 +51,10 @@ if [ "$ready" -ne 1 ]; then
   exit 1
 fi
 
+if has analytics; then
+  bash bin/setup-kibana.sh || echo -e "${YELLOW}Kibana import skipped — run bin/setup-kibana.sh once Kibana is up.${NC}"
+fi
+
 echo -e "\n${YELLOW}Containers:${NC}"
 docker compose ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} ps --format "table {{.Name}}\t{{.Status}}"
 
