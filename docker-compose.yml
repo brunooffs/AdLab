@@ -114,7 +114,8 @@ services:
 
   # ── Spark Master ───────────────────────────────────────────────────────────
   spark-master:
-    image: apache/spark:3.5.3
+    build: ./spark
+    image: adlab-spark-master:local
     container_name: spark-master
     profiles: ["streaming"]
     command: >
@@ -142,7 +143,8 @@ services:
 
   # ── Spark Worker ───────────────────────────────────────────────────────────
   spark-worker:
-    image: apache/spark:3.5.3
+    build: ./spark
+    image: adlab-spark-worker:local
     container_name: spark-worker
     profiles: ["streaming"]
     command: >

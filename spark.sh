@@ -23,16 +23,6 @@ if [ ! -s "./spark-jobs/adclick_streaming.py" ]; then
   exit 1
 fi
 
-# Check all JARs are present
-MISSING=0
-for jar in spark-sql-kafka.jar elasticsearch-spark.jar kafka-clients.jar spark-token-provider.jar commons-pool2.jar; do
-  if [ ! -f "./spark-jobs/$jar" ]; then
-    echo -e "${RED}Missing JAR: spark-jobs/$jar${NC}"
-    MISSING=1
-  fi
-done
-[ "$MISSING" -eq 1 ] && exit 1
-
 # Kill any existing running Spark applications
 echo -e "${YELLOW}Killing any existing Spark applications...${NC}"
 RUNNING_APPS=$(curl -s "http://localhost:8081/api/v1/applications" 2>/dev/null | \
@@ -66,17 +56,11 @@ docker exec spark-master mkdir -p /home/spark/.ivy2/cache 2>/dev/null || true
 echo -e "${YELLOW}Submitting Spark job...${NC}"
 echo -e "  Kafka:  kafka:9092/clickstream"
 echo -e "  ES:     http://elasticsearch:9200"
-echo -e "  JARs:   /opt/spark-apps/*.jar\n"
+echo -e "  JARs:   baked into the Spark image (spark/Dockerfile)\n"
 
 docker exec -e PYTHONUNBUFFERED=1 -e RUN_SECONDS -e STOP_FILE -e KAFKA_TOPIC \
   spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
-  --jars \
-    /opt/spark-apps/spark-sql-kafka.jar,\
-/opt/spark-apps/elasticsearch-spark.jar,\
-/opt/spark-apps/kafka-clients.jar,\
-/opt/spark-apps/spark-token-provider.jar,\
-/opt/spark-apps/commons-pool2.jar \
   --conf "spark.executor.memory=1g" \
   --conf "spark.driver.memory=512m" \
   "/opt/spark-apps/${SPARK_APP:-adclick_streaming.py}"
