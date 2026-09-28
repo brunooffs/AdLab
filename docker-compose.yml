@@ -251,7 +251,7 @@ services:
 
   # ── Kong API Gateway ───────────────────────────────────────────────────────
   kong:
-    image: kong:3.7-ubuntu
+    image: kong:3.9.3-ubuntu
     container_name: kong
     profiles: ["gateway"]
     environment:
