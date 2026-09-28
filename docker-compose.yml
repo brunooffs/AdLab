@@ -351,7 +351,7 @@ services:
 
   # ── Prometheus ─────────────────────────────────────────────────────────────
   prometheus:
-    image: prom/prometheus:v2.52.0
+    image: prom/prometheus:v3.13.3
     container_name: prometheus
     profiles: ["observability"]
     ports:
@@ -369,7 +369,7 @@ services:
 
   # ── Grafana ────────────────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:10.4.3
+    image: grafana/grafana:12.4.11
     container_name: grafana
     profiles: ["observability"]
     ports:
@@ -390,13 +390,13 @@ services:
 
   # ── Grafana Tempo — distributed tracing ───────────────────────────────────
   tempo:
-    image: grafana/tempo:2.4.0
+    image: grafana/tempo:2.10.8
     container_name: tempo
     profiles: ["observability"]
     command: ["-config.file=/etc/tempo.yml"]
     volumes:
       - ./tempo/tempo.yml:/etc/tempo.yml:ro
-      - tempo_data:/tmp/tempo
+      - tempo_data:/var/tempo
     ports:
       - "127.0.0.1:3200:3200"    # Tempo HTTP API + UI
       - "127.0.0.1:4317:4317"    # OTLP gRPC receiver
