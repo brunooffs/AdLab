@@ -193,7 +193,7 @@ services:
 
   # ── PostgreSQL ─────────────────────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine
     container_name: postgres
     environment:
       POSTGRES_USER: lab
@@ -214,7 +214,7 @@ services:
 
   # ── MongoDB ────────────────────────────────────────────────────────────────
   mongodb:
-    image: mongo:7
+    image: mongo:8.0.32-noble
     container_name: mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: lab
@@ -234,7 +234,7 @@ services:
 
   # ── Redis ──────────────────────────────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis:8.10.2-alpine
     container_name: redis
     ports:
       - "127.0.0.1:6379:6379"
