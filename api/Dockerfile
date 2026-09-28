@@ -24,7 +24,7 @@ RUN npx prisma generate
 
 # Copy source and compile TypeScript → JavaScript
 COPY src ./src
-RUN npx tsc --outDir dist --noEmit false || true
+RUN npx tsc --outDir dist --noEmit false
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim AS runtime

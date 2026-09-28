@@ -1,61 +1,71 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-#  start.sh — Start the full pipeline in correct order
+#  start.sh — Start AdLab. Services are grouped into compose profiles so you
+#  bring up only what your machine (and the exercise) needs.
+#
+#  Usage: ./start.sh [profile ...]
+#    ./start.sh                        core: postgres, redis, mongodb, elasticsearch, api
+#    ./start.sh streaming              + kafka, kafka-ui, spark
+#    ./start.sh streaming analytics    + kibana
+#    ./start.sh all                    gateway + streaming + analytics + observability
+#  Profiles: gateway streaming analytics observability extras
+#  ADLAB_SKIP_PREFLIGHT=1 skips the machine checks in bin/preflight.sh.
 # ─────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+cd "$(dirname "$0")"
 
-set -e
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
+VALID="gateway streaming analytics observability extras"
 
-echo -e "${CYAN}=== AdLab Pipeline — Starting ===${NC}\n"
+if [ "${1:-}" = "all" ]; then set -- gateway streaming analytics observability; fi
 
-echo -e "${YELLOW}[1/5] Starting data layer...${NC}"
-docker compose up -d postgres mongodb redis
-sleep 15
-
-echo -e "${YELLOW}[2/5] Starting Kafka...${NC}"
-docker compose up -d kafka
-echo "  Waiting for Kafka..."
-sleep 20
-
-echo -e "${YELLOW}[3/5] Starting Elasticsearch...${NC}"
-docker compose up -d elasticsearch
-echo "  Waiting for ES (this takes ~30s)..."
-until curl -sf "http://localhost:9200/_cluster/health" | grep -qv '"status":"red"'; do
-  printf "."
-  sleep 5
+PROFILE_ARGS=()
+for p in "$@"; do
+  case " $VALID " in
+    *" $p "*) PROFILE_ARGS+=(--profile "$p") ;;
+    *) echo -e "${RED}Unknown profile: $p${NC}  (valid: $VALID, or 'all')"; exit 1 ;;
+  esac
 done
-echo " ready!"
+REQUESTED=" $* "
+has() { case "$REQUESTED" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
-echo -e "${YELLOW}[4/5] Starting remaining services...${NC}"
-docker compose up -d kafka-ui kibana spark-master spark-worker cassandra prometheus grafana
+echo -e "${CYAN}=== AdLab — starting core${*:+ + $*} ===${NC}\n"
 
-echo -e "${YELLOW}[5/5] Starting API and Kong...${NC}"
-docker compose up -d api
-sleep 10
-docker compose up -d kong
+[ "${ADLAB_SKIP_PREFLIGHT:-0}" = "1" ] || bash bin/preflight.sh "$@"
 
-echo -e "\n${YELLOW}Running Prisma migrations...${NC}"
-docker exec api npx prisma migrate deploy 2>/dev/null && \
-  echo "  Migrations complete" || \
-  echo "  Migrations skipped (already applied)"
+# Compose orders startup itself: every depends_on has a health condition, and
+# the one-shot 'migrate' service must finish before 'api' starts.
+echo -e "\n${YELLOW}Building and starting services...${NC}"
+docker compose ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} up -d --build
 
-echo -e "\n${YELLOW}Checking service health...${NC}"
-sleep 5
-docker compose ps --format "table {{.Name}}\t{{.Status}}" | grep -v "^NAME"
+echo -e "\n${YELLOW}Waiting for the API to become healthy...${NC}"
+ready=0
+for _ in $(seq 1 60); do
+  if curl -sf http://localhost:3000/health >/dev/null 2>&1; then ready=1; break; fi
+  printf "."; sleep 3
+done
+echo
+if [ "$ready" -ne 1 ]; then
+  echo -e "${RED}API did not become healthy within 3 minutes. Recent logs:${NC}"
+  docker compose logs --tail=40 migrate api || true
+  exit 1
+fi
 
-echo -e "\n${GREEN}=== Pipeline started! ===${NC}\n"
+echo -e "\n${YELLOW}Containers:${NC}"
+docker compose ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} ps --format "table {{.Name}}\t{{.Status}}"
+
+echo -e "\n${GREEN}=== AdLab is up ===${NC}\n"
 echo -e "${CYAN}URLs:${NC}"
 echo "  API docs:      http://localhost:3000/docs"
-echo "  Kong:          http://localhost:8000"
-echo "  Kafka UI:      http://localhost:8080"
-echo "  Kibana:        http://localhost:5601"
-echo "  Spark UI:      http://localhost:8081"
 echo "  Elasticsearch: http://localhost:9200"
-echo "  Grafana:       http://localhost:3001  (admin/admin)"
-echo "  Prometheus:    http://localhost:9090"
+has gateway       && echo "  Kong:          http://localhost:8000"
+has streaming     && { echo "  Kafka UI:      http://localhost:8080"; echo "  Spark UI:      http://localhost:8081"; }
+has analytics     && echo "  Kibana:        http://localhost:5601"
+has observability && { echo "  Grafana:       http://localhost:3001  (admin/admin)"; echo "  Prometheus:    http://localhost:9090"; }
 echo ""
 echo -e "${CYAN}Next steps:${NC}"
-echo "  1. Send events:  ./produce.sh 500 10"
-echo "  2. Run Spark:    ./spark.sh"
-echo "  3. Check status: ./status.sh"
+echo "  ./bin/smoke.sh                 # verify the API end to end"
+has streaming && echo "  ./produce.sh 500 5             # send events, then ./spark.sh to aggregate them"
+has streaming || echo "  ./start.sh streaming           # add Kafka + Spark"
+echo "  ./status.sh                    # health of everything"
 echo ""

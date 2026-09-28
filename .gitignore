@@ -18,3 +18,12 @@ api/dist/
 
 # Mac
 .DS_Store
+# --- adlab patch set ---
+node_modules/
+api/dist/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.DS_Store

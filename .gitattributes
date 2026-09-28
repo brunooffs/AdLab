@@ -1,0 +1,3 @@
+# --- adlab patch set: keep shell scripts LF so they run on Windows checkouts ---
+*.sh text eol=lf
+Dockerfile text eol=lf

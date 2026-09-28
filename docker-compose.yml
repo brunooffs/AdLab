@@ -4,16 +4,27 @@
 #  Total target: ~10GB RAM — gives all services room to breathe
 # ─────────────────────────────────────────────────────────────────────────────
 
+name: adlab
+
+# Profiles — start only what you need (see ./start.sh):
+#   (none)         core: postgres, redis, mongodb, elasticsearch, migrate, api
+#   gateway        kong
+#   streaming      kafka, kafka-ui, spark-master, spark-worker
+#   analytics      kibana
+#   observability  prometheus, grafana, tempo
+#   extras         cassandra, keycloak   (not wired into the pipeline yet)
+#   tools          producer (one-shot; run it with ./produce.sh)
+
 services:
 
   # ── Kafka (KRaft) ──────────────────────────────────────────────────────────
   kafka:
     image: apache/kafka:3.8.0
     container_name: kafka
-    restart: unless-stopped
+    profiles: ["streaming"]
     ports:
-      - "9092:9092"
-      - "9094:9094"
+      - "127.0.0.1:9092:9092"
+      - "127.0.0.1:9094:9094"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -24,6 +35,7 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
@@ -44,12 +56,12 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
-    restart: unless-stopped
+    profiles: ["streaming"]
     depends_on:
       kafka:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
@@ -61,7 +73,6 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     container_name: elasticsearch
-    restart: unless-stopped
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
@@ -72,7 +83,7 @@ services:
         soft: -1
         hard: -1
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
     networks:
@@ -88,12 +99,12 @@ services:
   kibana:
     image: docker.elastic.co/kibana/kibana:8.13.4
     container_name: kibana
-    restart: unless-stopped
+    profiles: ["analytics"]
     depends_on:
       elasticsearch:
         condition: service_healthy
     ports:
-      - "5601:5601"
+      - "127.0.0.1:5601:5601"
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
       xpack.security.enabled: "false"
@@ -105,7 +116,7 @@ services:
   spark-master:
     image: apache/spark:3.5.3
     container_name: spark-master
-    restart: unless-stopped
+    profiles: ["streaming"]
     command: >
       /bin/bash -c "/opt/spark/sbin/start-master.sh && tail -f /opt/spark/logs/*"
     environment:
@@ -115,8 +126,8 @@ services:
       SPARK_NO_DAEMONIZE: "true"
       SPARK_DAEMON_MEMORY: 512m
     ports:
-      - "7077:7077"
-      - "8081:8081"
+      - "127.0.0.1:7077:7077"
+      - "127.0.0.1:8081:8081"
     volumes:
       - ./spark-jobs:/opt/spark-apps
       - spark_logs:/opt/spark/logs
@@ -133,7 +144,7 @@ services:
   spark-worker:
     image: apache/spark:3.5.3
     container_name: spark-worker
-    restart: unless-stopped
+    profiles: ["streaming"]
     command: >
       /bin/bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /opt/spark/logs/*"
     environment:
@@ -146,7 +157,7 @@ services:
       spark-master:
         condition: service_healthy
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     volumes:
       - ./spark-jobs:/opt/spark-apps
       - spark_logs:/opt/spark/logs
@@ -157,9 +168,9 @@ services:
   cassandra:
     image: cassandra:4.1
     container_name: cassandra
-    restart: unless-stopped
+    profiles: ["extras"]
     ports:
-      - "9042:9042"
+      - "127.0.0.1:9042:9042"
     environment:
       CASSANDRA_CLUSTER_NAME: "local-cluster"
       CASSANDRA_DC: "dc1"
@@ -182,15 +193,15 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: postgres
-    restart: unless-stopped
     environment:
       POSTGRES_USER: lab
       POSTGRES_PASSWORD: labpass
       POSTGRES_DB: adlab
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - pipeline
     healthcheck:
@@ -203,13 +214,12 @@ services:
   mongodb:
     image: mongo:7
     container_name: mongodb
-    restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: lab
       MONGO_INITDB_ROOT_PASSWORD: labpass
       MONGO_INITDB_DATABASE: adlab
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
     networks:
@@ -224,9 +234,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: redis
-    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -242,7 +251,7 @@ services:
   kong:
     image: kong:3.7-ubuntu
     container_name: kong
-    restart: unless-stopped
+    profiles: ["gateway"]
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
@@ -255,13 +264,13 @@ services:
       KONG_PLUGINS: bundled
       KONG_NGINX_WORKER_PROCESSES: 2
     ports:
-      - "8000:8000"
-      - "8001:8001"
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8001"
     volumes:
       - ./kong/kong.yml:/etc/kong/kong.yml:ro
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     networks:
       - pipeline
     healthcheck:
@@ -276,10 +285,10 @@ services:
     build:
       context: ./api
       dockerfile: Dockerfile
+    image: adlab-api:local
     container_name: api
-    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       NODE_ENV: development
       PORT: 3000
@@ -300,9 +309,41 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./api:/app
-      - /app/node_modules
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - pipeline
+
+  # ── DB migrations (one-shot; api starts only after this succeeds) ──────────
+  migrate:
+    image: adlab-api:local
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: migrate
+    command: ["npx", "prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: postgresql://lab:labpass@postgres:5432/adlab
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pipeline
+
+  # ── Click event producer (one-shot; run it with ./produce.sh) ──────────────
+  producer:
+    build: ./producer
+    profiles: ["tools"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql://lab:labpass@postgres:5432/adlab
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - pipeline
 
@@ -310,9 +351,9 @@ services:
   prometheus:
     image: prom/prometheus:v2.52.0
     container_name: prometheus
-    restart: unless-stopped
+    profiles: ["observability"]
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -328,9 +369,9 @@ services:
   grafana:
     image: grafana/grafana:10.4.3
     container_name: grafana
-    restart: unless-stopped
+    profiles: ["observability"]
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -349,15 +390,15 @@ services:
   tempo:
     image: grafana/tempo:2.4.0
     container_name: tempo
-    restart: unless-stopped
+    profiles: ["observability"]
     command: ["-config.file=/etc/tempo.yml"]
     volumes:
       - ./tempo/tempo.yml:/etc/tempo.yml:ro
       - tempo_data:/tmp/tempo
     ports:
-      - "3200:3200"    # Tempo HTTP API + UI
-      - "4317:4317"    # OTLP gRPC receiver
-      - "4318:4318"    # OTLP HTTP receiver (Node.js sends here)
+      - "127.0.0.1:3200:3200"    # Tempo HTTP API + UI
+      - "127.0.0.1:4317:4317"    # OTLP gRPC receiver
+      - "127.0.0.1:4318:4318"    # OTLP HTTP receiver (Node.js sends here)
     networks:
       - pipeline
 
@@ -365,6 +406,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
     container_name: keycloak
+    profiles: ["extras"]
     restart: "no"
     command: start-dev
     environment:
@@ -376,7 +418,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       JAVA_OPTS_APPEND: "-Xms256m -Xmx512m"
     ports:
-      - "8180:8080"
+      - "127.0.0.1:8180:8080"
     depends_on:
       postgres:
         condition: service_healthy
