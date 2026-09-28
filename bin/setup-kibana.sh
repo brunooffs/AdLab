@@ -14,6 +14,15 @@ GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 
 [ -f "$FILE" ] || { echo -e "${RED}Missing $FILE${NC}"; exit 1; }
 
+# Fail fast when targeting the local stack and the container simply is not running.
+case "$KIBANA" in
+  http://localhost:*|http://127.0.0.1:*)
+    if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^kibana$'; then
+      echo -e "${RED}The kibana container is not running.${NC} Start it with:  ./start.sh analytics"
+      exit 1
+    fi ;;
+esac
+
 echo -e "${YELLOW}Waiting for Kibana at $KIBANA ...${NC}"
 ready=0
 for _ in $(seq 1 60); do
@@ -22,7 +31,7 @@ for _ in $(seq 1 60); do
 done
 echo
 if [ "$ready" -ne 1 ]; then
-  echo -e "${RED}Kibana did not become available within 3 minutes (is the 'analytics' profile running?)${NC}"
+  echo -e "${RED}Kibana did not become available within 3 minutes.${NC} Check:  docker logs --tail 30 kibana"
   exit 1
 fi
 
