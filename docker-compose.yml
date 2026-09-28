@@ -19,7 +19,7 @@ services:
 
   # ── Kafka (KRaft) ──────────────────────────────────────────────────────────
   kafka:
-    image: apache/kafka:3.8.0
+    image: apache/kafka:4.3.1
     container_name: kafka
     profiles: ["streaming"]
     ports:
