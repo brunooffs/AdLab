@@ -37,10 +37,26 @@ pass() { echo -e "  ${GREEN}✓${NC} $1"; }
 fail() { echo -e "  ${RED}✗${NC} $1"; failures=$((failures + 1)); }
 die()  { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 kx()   { docker exec kafka /opt/kafka/bin/"$@"; }
+show_log_problems() {   # show_log_problems FILE — first errors (the root cause) + the tail
+  echo "  --- first errors in $(basename "$1") ---"
+  grep -nE "ERROR|Exception|Caused by|Traceback" "$1" 2>/dev/null | head -12 | cut -c1-220 | sed 's/^/      /'
+  echo "  --- last 6 lines ---"
+  tail -6 "$1" 2>/dev/null | cut -c1-220 | sed 's/^/      /'
+}
+save_logs() {           # keep everything needed to debug a failed run
+  local dir=".e2e-logs/$TOPIC" c
+  mkdir -p "$dir" && printf '*\n' > .e2e-logs/.gitignore      # the directory ignores itself
+  cp "$WORK"/*.log "$dir"/ 2>/dev/null || true
+  for c in kafka spark-master spark-worker elasticsearch api; do
+    docker logs --tail 300 "$c" > "$dir/container-$c.log" 2>&1 || true
+  done
+  echo -e "\n${YELLOW}Logs saved in $dir/${NC}"
+}
 # No `docker ps | grep -q`: under pipefail, grep exiting early can make the pipeline "fail".
 running() { local names; names=$(docker ps --format '{{.Names}}' 2>/dev/null) || return 1; grep -qx "$1" <<< "$names"; }
 
 cleanup() {
+  local rc=$?
   docker exec spark-master touch "$STOP_FILE" >/dev/null 2>&1 || true
   if [ -n "$SPARK_PID" ]; then
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
@@ -50,6 +66,7 @@ cleanup() {
     kill "$SPARK_PID" 2>/dev/null || true
   fi
   kx kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic "$TOPIC" >/dev/null 2>&1 || true
+  [ "$rc" -eq 0 ] || save_logs
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -112,7 +129,7 @@ for _ in $(seq 1 75); do
   sleep 2
 done
 if [ "$ready" -ne 1 ]; then
-  echo "  --- spark.sh output (last 15 lines) ---"; tail -15 "$WORK/spark.log" | sed 's/^/      /'
+  show_log_problems "$WORK/spark.log"
   die "Spark job did not start (waited 150s)"
 fi
 pass "Spark job running (4 streaming queries)"
@@ -157,19 +174,24 @@ fi
 
 # ── Aggregates in Elasticsearch ──────────────────────────────────────────────
 step "Waiting for Spark to aggregate into Elasticsearch (up to ${TIMEOUT}s)"
-deadline=$(( $(date +%s) + TIMEOUT )); got=""
+deadline=$(( $(date +%s) + TIMEOUT )); got=""; spark_dead=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
   got=$(es_sum item-click-counts)
   [ "$got" = "$clicks" ] && break
   if [ -n "$got" ] && [ "$got" -gt "$clicks" ]; then break; fi        # double counting
-  kill -0 "$SPARK_PID" 2>/dev/null || { echo "  Spark exited early"; break; }
+  kill -0 "$SPARK_PID" 2>/dev/null || { spark_dead=1; break; }
   sleep "$POLL"
 done
+if [ "$spark_dead" -eq 1 ] && [ "$got" != "$clicks" ]; then
+  fail "the Spark job exited before the aggregates arrived"
+  show_log_problems "$WORK/spark.log"
+  exit 1          # everything after this would only be a consequence of the crash
+fi
 if [ "$got" = "$clicks" ]; then
   pass "item-click-counts: $got clicks (matches Kafka)"
 else
   fail "item-click-counts: got '${got:-none}', expected $clicks"
-  echo "  --- spark.sh output (last 15 lines) ---"; tail -15 "$WORK/spark.log" | sed 's/^/      /'
+  show_log_problems "$WORK/spark.log"
 fi
 for idx in clicks-per-market clicks-per-adtype clicks-per-campaign; do
   v=""

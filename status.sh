@@ -66,13 +66,11 @@ docker exec kafka /opt/kafka/bin/kafka-topics.sh \
   | grep -v "^$" | sed 's/^/  /' || echo "  No topics found"
 
 echo -e "\n${YELLOW}Kafka message count (clickstream):${NC}"
-docker exec kafka /opt/kafka/bin/kafka-run-class.sh \
-  kafka.tools.GetOffsetShell \
-  --broker-list localhost:9092 \
+docker exec kafka /opt/kafka/bin/kafka-get-offsets.sh \
+  --bootstrap-server localhost:9092 \
   --topic clickstream \
   --time -1 2>/dev/null \
-  | awk -F: '{sum += $3} END {print "  Total messages: " sum}' \
-  || echo "  clickstream topic not found"
+  | awk -F: '{sum += $3} END {print "  Total messages: " (NR ? sum : "n/a (topic not found)")}'
 
 echo -e "\n${YELLOW}PostgreSQL tables:${NC}"
 docker exec postgres psql -U lab -d adlab -t -c \
@@ -80,3 +78,4 @@ docker exec postgres psql -U lab -d adlab -t -c \
   2>/dev/null | grep -v "^$" | sed 's/^/  /' || echo "  Postgres unreachable"
 
 echo ""
+
