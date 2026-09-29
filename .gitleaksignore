@@ -1,0 +1,16 @@
+# gitleaks ignore — documented false positives, not real secrets.
+#
+# Format: <commit_sha>:<file>:<rule-id>:<line>
+# Regenerate with:
+#   docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+#     detect --source /repo --no-banner --redact -v 2>&1 | grep '^Fingerprint:'
+#
+# NOTE: fingerprints are pinned to a commit SHA. A history rewrite (git filter-repo,
+# rebase, squash) changes every SHA after the rewritten commit and invalidates the
+# fingerprints below — gitleaks will flag them again and this file must be regenerated.
+
+# k8s/base/secrets.yaml documents itself as lab-only defaults ("lab/labpass",
+# "admin/admin", a hardcoded dev JWT string) and says so is intentional in the
+# file's own header comment. Not a real credential.
+b0b5d4dde411204579a5f0ae089da363e25e5558:k8s/base/secrets.yaml:kubernetes-secret-yaml:12
+b0b5d4dde411204579a5f0ae089da363e25e5558:k8s/base/secrets.yaml:generic-api-key:27

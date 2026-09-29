@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdLab</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e8ee; --muted: #8b93a7;
+    --up: #34d399; --starting: #fbbf24; --stopped: #4b5263; --bad: #f87171; --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  header { padding: 20px 24px 8px; }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  main { padding: 16px 24px 40px; max-width: 1000px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .bar label { display: flex; align-items: center; gap: 5px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; font-size: 12.5px; user-select: none; }
+  .bar label:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+  .bar input { accent-color: var(--accent); }
+  button { font: inherit; border: 1px solid var(--line); background: #1e2230; color: var(--text); padding: 7px 14px; border-radius: 7px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #0b1220; border-color: var(--accent); font-weight: 600; }
+  button.danger { background: #3a1414; border-color: var(--bad); color: #ffb4b4; }
+  .spacer { flex: 1; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .card .row { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--stopped); }
+  .dot.up { background: var(--up); box-shadow: 0 0 6px var(--up); }
+  .dot.starting { background: var(--starting); }
+  .dot.unhealthy, .dot.exited { background: var(--bad); }
+  .card .label { font-weight: 600; }
+  .card .state { color: var(--muted); font-size: 12px; }
+  .card a { color: var(--accent); font-size: 12px; text-decoration: none; }
+  .card a:hover { text-decoration: underline; }
+  .group-title { margin: 22px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  #logWrap { display: none; margin-top: 18px; }
+  #logWrap.show { display: block; }
+  #logHead { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  #logTitle { font-weight: 600; }
+  #log { background: #05070a; border: 1px solid var(--line); border-radius: 8px; padding: 12px; height: 320px; overflow: auto; white-space: pre-wrap; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+  #dockerWarn { display: none; margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #3a1414; border: 1px solid var(--bad); color: #ffb4b4; font-size: 12.5px; }
+  #dockerWarn.show { display: block; }
+  .toast { position: fixed; bottom: 18px; right: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; max-width: 360px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AdLab</h1>
+  <div class="sub">local control panel — drives the same start.sh / stop.sh / reset.sh you'd run by hand</div>
+</header>
+<main>
+  <div id="dockerWarn"></div>
+
+  <div class="bar" id="profileBar">
+    <span class="sub" style="margin-right:4px;">Start:</span>
+    <label><input type="checkbox" value="gateway"> gateway</label>
+    <label><input type="checkbox" value="streaming"> streaming</label>
+    <label><input type="checkbox" value="analytics"> analytics</label>
+    <label><input type="checkbox" value="observability"> observability</label>
+    <label><input type="checkbox" value="extras"> extras</label>
+    <button class="primary" id="btnStart">Start selected</button>
+    <div class="spacer"></div>
+    <button id="btnStop">Stop</button>
+    <button class="danger" id="btnReset">Reset (wipes data)</button>
+  </div>
+
+  <div id="groups"></div>
+
+  <div id="logWrap">
+    <div id="logHead"><span id="logTitle"></span><span class="sub" id="logStatus"></span></div>
+    <div id="log"></div>
+  </div>
+</main>
+
+<script>
+'use strict';
+const PROFILE_ORDER = [
+  [null, 'Core (always on)'],
+  ['gateway', 'Gateway'],
+  ['streaming', 'Streaming'],
+  ['analytics', 'Analytics'],
+  ['observability', 'Observability'],
+  ['extras', 'Extras'],
+];
+const STATE_LABEL = { up: 'up', starting: 'starting…', stopped: 'not started', exited: 'exited', unhealthy: 'unhealthy' };
+
+const groupsEl = document.getElementById('groups');
+const dockerWarnEl = document.getElementById('dockerWarn');
+
+function render(status) {
+  dockerWarnEl.classList.toggle('show', !status.dockerOk);
+  if (!status.dockerOk) dockerWarnEl.textContent = 'Could not reach Docker: ' + (status.dockerError || 'unknown error') + ' — is Docker running?';
+
+  const byProfile = new Map();
+  for (const svc of status.services) {
+    const key = svc.profile;
+    if (!byProfile.has(key)) byProfile.set(key, []);
+    byProfile.get(key).push(svc);
+  }
+
+  groupsEl.innerHTML = '';
+  for (const [key, title] of PROFILE_ORDER) {
+    const list = byProfile.get(key) || [];
+    if (!list.length) continue;
+    const h = document.createElement('div');
+    h.className = 'group-title';
+    h.textContent = title;
+    groupsEl.appendChild(h);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (const svc of list) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const link = svc.url && svc.state === 'up' ? `<a href="${svc.url}" target="_blank" rel="noopener">${svc.url.replace(/^https?:\/\//, '')}</a>` : '';
+      card.innerHTML = `
+        <div class="row"><span class="dot ${svc.state}"></span><span class="label">${svc.label}</span></div>
+        <div class="state">${STATE_LABEL[svc.state] || svc.state}</div>
+        ${link}
+      `;
+      grid.appendChild(card);
+    }
+    groupsEl.appendChild(grid);
+  }
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/status');
+    const status = await r.json();
+    render(status);
+    setButtonsBusy(!!(status.run && status.run.running));
+    if (status.run && status.run.running && !currentLogRun) attachLog(status.run.id, status.run.label);
+  } catch (e) { /* server likely restarting between polls; ignore and retry */ }
+}
+
+function setButtonsBusy(busy) {
+  for (const id of ['btnStart', 'btnStop', 'btnReset']) document.getElementById(id).disabled = busy;
+}
+
+let currentLogRun = null;
+let es = null;
+
+function attachLog(runId, label) {
+  currentLogRun = runId;
+  const wrap = document.getElementById('logWrap');
+  const logEl = document.getElementById('log');
+  document.getElementById('logTitle').textContent = label;
+  document.getElementById('logStatus').textContent = 'running…';
+  logEl.textContent = '';
+  wrap.classList.add('show');
+  if (es) es.close();
+  es = new EventSource('/api/logs?run=' + encodeURIComponent(runId));
+  es.addEventListener('line', (ev) => {
+    logEl.textContent += ev.data.replace(/\\n/g, '\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  });
+  es.addEventListener('done', (ev) => {
+    const { code } = JSON.parse(ev.data);
+    document.getElementById('logStatus').textContent = code === 0 ? 'finished' : `exited with code ${code}`;
+    es.close(); es = null; currentLogRun = null;
+    setButtonsBusy(false);
+    refresh();
+  });
+  es.onerror = () => { /* connection dropped; the next refresh() poll will re-attach if still running */ };
+}
+
+async function postAction(payload) {
+  const r = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(data.error || ('request failed: ' + r.status)); return; }
+  setButtonsBusy(true);
+  attachLog(data.runId, payload.action === 'start' ? 'start.sh' : payload.action + '.sh');
+}
+
+document.getElementById('btnStart').addEventListener('click', () => {
+  const profiles = [...document.querySelectorAll('#profileBar input:checked')].map((i) => i.value);
+  postAction({ action: 'start', profiles });
+});
+document.getElementById('btnStop').addEventListener('click', () => postAction({ action: 'stop' }));
+document.getElementById('btnReset').addEventListener('click', () => {
+  if (!confirm('This deletes ALL AdLab data (Postgres, Elasticsearch, Kafka, everything). Continue?')) return;
+  postAction({ action: 'reset', confirm: 'RESET' });
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
