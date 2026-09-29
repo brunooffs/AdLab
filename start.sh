@@ -51,6 +51,17 @@ if [ "$ready" -ne 1 ]; then
   exit 1
 fi
 
+if has gateway; then
+  echo -e "\n${YELLOW}Waiting for Kong...${NC}"
+  kong_ready=0
+  for _ in $(seq 1 30); do
+    if curl -sf http://localhost:8000/health >/dev/null 2>&1; then kong_ready=1; break; fi
+    printf "."; sleep 2
+  done
+  echo
+  [ "$kong_ready" -eq 1 ] || echo -e "${YELLOW}Kong did not answer on :8000 within 60s — check: docker logs kong${NC}"
+fi
+
 if has analytics; then
   bash bin/setup-kibana.sh || echo -e "${YELLOW}Kibana import skipped — run bin/setup-kibana.sh once Kibana is up.${NC}"
 fi

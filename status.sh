@@ -78,3 +78,4 @@ docker exec postgres psql -U lab -d adlab -t -c \
   2>/dev/null | grep -v "^$" | sed 's/^/  /' || echo "  Postgres unreachable"
 
 echo ""
+

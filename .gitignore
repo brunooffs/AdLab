@@ -1,29 +1,20 @@
+# Dependencies and build output
 node_modules/
-.env
-*.log
 dist/
-.DS_Store
-spark-jobs/__pycache__/
-*.pyc
-.venv/
+api/dist/
+
 # Python
-producer/.env
-producer/__pycache__/
-spark-jobs/__pycache__/
-*.pyc
-
-# Node
-api/node_modules/
-api/dist/
-
-# Mac
-.DS_Store
-# --- adlab patch set ---
-node_modules/
-api/dist/
 __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Environment files (real secrets must never be committed; *.example files are fine)
 .env
+
+# Logs and local test artifacts
+*.log
+.e2e-logs/
+
+# OS
 .DS_Store
