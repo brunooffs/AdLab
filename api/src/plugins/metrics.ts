@@ -1,88 +1,52 @@
 import fp from 'fastify-plugin'
 import { FastifyPluginAsync } from 'fastify'
+import { Registry, Counter, Histogram, collectDefaultMetrics } from 'prom-client'
 
-interface Counter   { [key: string]: number }
-interface Histogram { [key: string]: number[] }
+// One registry per process. collectDefaultMetrics adds the Node.js runtime metrics
+// (event-loop lag, heap, GC, CPU, open handles, process start time, ...).
+const register = new Registry()
+collectDefaultMetrics({ register })
 
-const counters:   Counter   = {}
-const histograms: Histogram = {}
-const startTime = Date.now()
+const httpRequests = new Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'route', 'status'] as const,
+  registers: [register],
+})
 
-function inc(name: string, labels: Record<string, string> = {}) {
-  const key = name + JSON.stringify(labels)
-  counters[key] = (counters[key] || 0) + 1
-}
+// A real histogram: cumulative buckets that Prometheus can aggregate across
+// replicas with histogram_quantile(). Memory use is constant, however many
+// requests are served.
+const httpDuration = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'HTTP request duration in seconds',
+  labelNames: ['method', 'route', 'status'] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [register],
+})
 
-function observe(name: string, value: number, labels: Record<string, string> = {}) {
-  const key = name + JSON.stringify(labels)
-  if (!histograms[key]) histograms[key] = []
-  histograms[key].push(value)
-}
-
+// Same signature as before (duration in ms) so existing callers keep working.
 export function recordRequest(method: string, route: string, status: number, durationMs: number) {
-  inc('http_requests_total', { method, route, status: String(status) })
-  observe('http_request_duration_ms', durationMs, { method, route })
-}
-
-function renderMetrics(): string {
-  const lines: string[] = []
-  const uptime = (Date.now() - startTime) / 1000
-
-  lines.push('# HELP process_uptime_seconds API uptime in seconds')
-  lines.push('# TYPE process_uptime_seconds gauge')
-  lines.push(`process_uptime_seconds ${uptime.toFixed(2)}`)
-
-  lines.push('# HELP http_requests_total Total HTTP requests')
-  lines.push('# TYPE http_requests_total counter')
-  for (const [key, val] of Object.entries(counters)) {
-    const name = key.split('{')[0]
-    const labelsStr = key.slice(name.length)
-    try {
-      const labels = JSON.parse(labelsStr)
-      const labelParts = Object.entries(labels).map(([k, v]) => `${k}="${v}"`).join(',')
-      lines.push(`${name}{${labelParts}} ${val}`)
-    } catch { lines.push(`${name} ${val}`) }
-  }
-
-  lines.push('# HELP http_request_duration_ms HTTP request duration in ms')
-  lines.push('# TYPE http_request_duration_ms histogram')
-  for (const [key, vals] of Object.entries(histograms)) {
-    if (vals.length === 0) continue
-    const name = key.split('{')[0]
-    const labelsStr = key.slice(name.length)
-    const sorted = [...vals].sort((a, b) => a - b)
-    const sum    = sorted.reduce((a, b) => a + b, 0)
-    const p50    = sorted[Math.floor(sorted.length * 0.50)] || 0
-    const p95    = sorted[Math.floor(sorted.length * 0.95)] || 0
-    const p99    = sorted[Math.floor(sorted.length * 0.99)] || 0
-    try {
-      const labels = JSON.parse(labelsStr)
-      const lp = Object.entries(labels).map(([k, v]) => `${k}="${v}"`).join(',')
-      lines.push(`${name}_p50_ms{${lp}} ${p50.toFixed(2)}`)
-      lines.push(`${name}_p95_ms{${lp}} ${p95.toFixed(2)}`)
-      lines.push(`${name}_p99_ms{${lp}} ${p99.toFixed(2)}`)
-      lines.push(`${name}_sum{${lp}} ${sum.toFixed(2)}`)
-      lines.push(`${name}_count{${lp}} ${sorted.length}`)
-    } catch { /* skip malformed */ }
-  }
-
-  return lines.join('\n') + '\n'
+  const labels = { method, route, status: String(status) }
+  httpRequests.inc(labels)
+  httpDuration.observe(labels, durationMs / 1000)
 }
 
 const metricsPlugin: FastifyPluginAsync = fp(async (app) => {
 
   app.addHook('onResponse', async (req, reply) => {
-    const duration = reply.elapsedTime
-    // routerPath removed in Fastify 5 — use routeOptions.url instead
-    const route = req.routeOptions?.url ?? req.url
-    recordRequest(req.method, route, reply.statusCode, duration)
+    // routeOptions.url is the route pattern (/v1/advertisers/:id), which keeps the
+    // label set small. Unmatched URLs (404s) share one fixed label: using req.url
+    // would create a new time series for every distinct path a scanner or typo sends.
+    const route = req.routeOptions?.url ?? 'unmatched'
+    recordRequest(req.method, route, reply.statusCode, reply.elapsedTime)
   })
 
   app.get('/metrics', {
     schema: { hide: true }
   }, async (_req, reply) => {
-    reply.header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
-    return reply.send(renderMetrics())
+    reply.header('Content-Type', register.contentType)
+    return reply.send(await register.metrics())
   })
 
   app.log.info('Metrics endpoint ready at /metrics')

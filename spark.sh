@@ -2,9 +2,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #  spark.sh — Submit the Spark streaming job cleanly
 #  Kills any existing Spark apps before submitting
+#  Optional env: SPARK_APP (default adclick_streaming.py; adclick_runner.py adds RUN_SECONDS /
+#  STOP_FILE stop conditions), KAFKA_TOPIC (default clickstream)
 # ─────────────────────────────────────────────────────────────────────────────
 
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
+cd "$(dirname "$0")"
 
 echo -e "${CYAN}=== Spark Streaming Job ===${NC}\n"
 
@@ -19,16 +22,6 @@ if [ ! -s "./spark-jobs/adclick_streaming.py" ]; then
   echo -e "${RED}spark-jobs/adclick_streaming.py is missing or empty.${NC}"
   exit 1
 fi
-
-# Check all JARs are present
-MISSING=0
-for jar in spark-sql-kafka.jar elasticsearch-spark.jar kafka-clients.jar spark-token-provider.jar commons-pool2.jar; do
-  if [ ! -f "./spark-jobs/$jar" ]; then
-    echo -e "${RED}Missing JAR: spark-jobs/$jar${NC}"
-    MISSING=1
-  fi
-done
-[ "$MISSING" -eq 1 ] && exit 1
 
 # Kill any existing running Spark applications
 echo -e "${YELLOW}Killing any existing Spark applications...${NC}"
@@ -63,18 +56,13 @@ docker exec spark-master mkdir -p /home/spark/.ivy2/cache 2>/dev/null || true
 echo -e "${YELLOW}Submitting Spark job...${NC}"
 echo -e "  Kafka:  kafka:9092/clickstream"
 echo -e "  ES:     http://elasticsearch:9200"
-echo -e "  JARs:   /opt/spark-apps/*.jar\n"
+echo -e "  JARs:   baked into the Spark image (spark/Dockerfile)\n"
 
-docker exec spark-master /opt/spark/bin/spark-submit \
+docker exec -e PYTHONUNBUFFERED=1 -e RUN_SECONDS -e STOP_FILE -e KAFKA_TOPIC \
+  spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
-  --jars \
-    /opt/spark-apps/spark-sql-kafka.jar,\
-/opt/spark-apps/elasticsearch-spark.jar,\
-/opt/spark-apps/kafka-clients.jar,\
-/opt/spark-apps/spark-token-provider.jar,\
-/opt/spark-apps/commons-pool2.jar \
   --conf "spark.executor.memory=1g" \
   --conf "spark.driver.memory=512m" \
-  /opt/spark-apps/adclick_streaming.py
+  "/opt/spark-apps/${SPARK_APP:-adclick_streaming.py}"
 
 echo -e "\n${GREEN}Spark job finished.${NC}"

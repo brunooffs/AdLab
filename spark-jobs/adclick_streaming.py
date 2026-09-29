@@ -61,13 +61,13 @@ def _es_put(path: str, body: dict) -> None:
         urllib.request.urlopen(req, timeout=10)
     except urllib.error.HTTPError as e:
         if e.code != 400:
-            print(f"WARNING: ES PUT /{path} returned {e.code} - adclick_streaming.py:64")
+            print(f"  WARNING: ES PUT /{path} returned {e.code}")
     except Exception as e:
-        print(f"WARNING: ES PUT /{path} failed: {e} - adclick_streaming.py:66")
+        print(f"  WARNING: ES PUT /{path} failed: {e}")
 
 
 def create_es_templates() -> None:
-    print("Creating ES index templates... - adclick_streaming.py:70")
+    print("Creating ES index templates...")
     _es_put("_index_template/adlab-click-counts", {
         "index_patterns": ["item-click-counts*"],
         "priority": 100,
@@ -117,7 +117,7 @@ def create_es_templates() -> None:
             "doc_id":        {"type": "keyword"},
         }}}
     })
-    print("ES templates ready - adclick_streaming.py:120")
+    print("  ES templates ready")
 
 
 def delete_old_indices() -> None:
@@ -127,10 +127,10 @@ def delete_old_indices() -> None:
             f"{ES_BASE_URL}/{index}", method="DELETE")
         try:
             urllib.request.urlopen(req, timeout=10)
-            print(f"Deleted old index: {index} - adclick_streaming.py:130")
+            print(f"  Deleted old index: {index}")
         except urllib.error.HTTPError as e:
             if e.code != 404:
-                print(f"WARNING: could not delete {index}: {e.code} - adclick_streaming.py:133")
+                print(f"  WARNING: could not delete {index}: {e.code}")
         except Exception:
             pass
 
@@ -158,7 +158,7 @@ def write_to_es(df: DataFrame, epoch_id: int, index: str) -> None:
        .option("es.batch.write.refresh", "false")
        .mode("append")
        .save())
-    print(f"Wrote batch {epoch_id} to {index} - adclick_streaming.py:161")
+    print(f"  Wrote batch {epoch_id} to {index}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -171,17 +171,17 @@ def main():
     )
     spark.sparkContext.setLogLevel("WARN")
 
-    print("\n - adclick_streaming.py:174" + "="*60)
-    print("AdLab Clickstream Pipeline  starting - adclick_streaming.py:175")
-    print("= - adclick_streaming.py:176"*60 + "\n")
+    print("\n" + "="*60)
+    print("AdLab Clickstream Pipeline — starting")
+    print("="*60 + "\n")
 
     create_es_templates()
     delete_old_indices()
 
-    print(f"Kafka:  {KAFKA_SERVERS} → {KAFKA_TOPIC} - adclick_streaming.py:181")
-    print(f"ES:     {ES_BASE_URL} - adclick_streaming.py:182")
-    print(f"Window: {WINDOW_DUR} | Trigger: {TRIGGER} - adclick_streaming.py:183")
-    print("Watermark: NONE (replaying historical events)\n - adclick_streaming.py:184")
+    print(f"Kafka:  {KAFKA_SERVERS} → {KAFKA_TOPIC}")
+    print(f"ES:     {ES_BASE_URL}")
+    print(f"Window: {WINDOW_DUR} | Trigger: {TRIGGER}")
+    print("Watermark: NONE (replaying historical events)\n")
 
     # ── Read from Kafka ───────────────────────────────────────────────────────
     raw = (
@@ -297,9 +297,9 @@ def main():
         .start()
     )
 
-    print("4 streaming queries running: - adclick_streaming.py:300")
-    print("itemclickcounts | clickspermarket | clicksperadtype | clickspercampaign - adclick_streaming.py:301")
-    print(f"Trigger: {TRIGGER} | Press Ctrl+C to stop\n - adclick_streaming.py:302")
+    print("4 streaming queries running:")
+    print("  item-click-counts | clicks-per-market | clicks-per-adtype | clicks-per-campaign")
+    print(f"  Trigger: {TRIGGER} | Press Ctrl+C to stop\n")
 
     spark.streams.awaitAnyTermination()
 

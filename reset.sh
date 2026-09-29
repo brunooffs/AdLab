@@ -1,49 +1,30 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-#  reset.sh — Full nuclear reset
-#  Stops everything, wipes all volumes and checkpoints
+#  reset.sh — Full reset of THIS project: removes its containers and volumes.
+#  Only touches the 'adlab' compose project — other Docker data is left alone.
+#  Usage: ./reset.sh [--yes]
 # ─────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+cd "$(dirname "$0")"
 
-RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
+RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
 
-echo -e "${RED}=== FULL RESET — ALL DATA WILL BE LOST ===${NC}"
+echo -e "${RED}=== RESET — all AdLab data will be lost ===${NC}"
+echo "  - removes every AdLab container"
+echo "  - deletes the AdLab volumes (Postgres, Elasticsearch, Kafka, Redis, MongoDB, ...)"
+echo "  - Spark checkpoints go with the containers"
 echo ""
-echo "This will:"
-echo "  - Stop all containers"
-echo "  - Delete all Docker volumes (Postgres, ES, Kafka, Redis, MongoDB data)"
-echo "  - Clear Spark checkpoints"
-echo ""
-read -p "Type 'yes' to confirm: " confirm
-[[ "$confirm" != "yes" ]] && echo "Aborted." && exit 0
+if [ "${1:-}" != "--yes" ]; then
+  read -r -p "Type 'yes' to confirm: " confirm
+  [ "$confirm" = "yes" ] || { echo "Aborted."; exit 0; }
+fi
 
-echo -e "\n${YELLOW}[1/4] Killing Spark applications...${NC}"
-curl -s "http://localhost:8081/api/v1/applications" 2>/dev/null | \
-  python3 -c "
-import sys, json
-try:
-    apps = json.load(sys.stdin)
-    for a in apps:
-        attempts = a.get('attempts', [{}])
-        if attempts and not attempts[0].get('completed', True):
-            print(a['id'])
-except: pass
-" 2>/dev/null | while read app; do
-  curl -s -X POST "http://localhost:8081/app/kill/?id=${app}&terminate=true" > /dev/null
-  echo "  Killed: $app"
-done
+echo -e "\n${YELLOW}Removing containers and volumes...${NC}"
+docker compose --profile gateway --profile streaming --profile analytics \
+  --profile observability --profile extras --profile tools \
+  down -v --remove-orphans --timeout 20
 
-echo -e "${YELLOW}[2/4] Stopping all containers...${NC}"
-docker compose down --timeout 20
-
-echo -e "${YELLOW}[3/4] Removing all volumes (data wipe)...${NC}"
-docker compose down -v
-
-echo -e "${YELLOW}[4/4] Cleaning up...${NC}"
-docker exec spark-master rm -rf /tmp/spark-checkpoints 2>/dev/null || true
-rm -rf ./spark-jobs/__pycache__
-rm -rf ./producer/__pycache__
-docker system prune -f --volumes 2>/dev/null || true
+rm -rf ./spark-jobs/__pycache__ ./producer/__pycache__
 
 echo -e "\n${GREEN}=== Reset complete ===${NC}"
-echo "Run ./start.sh to restart the pipeline"
-echo ""
+echo "Run ./start.sh to start again."
