@@ -45,6 +45,19 @@
   #dockerWarn { display: none; margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #3a1414; border: 1px solid var(--bad); color: #ffb4b4; font-size: 12.5px; }
   #dockerWarn.show { display: block; }
   .toast { position: fixed; bottom: 18px; right: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; max-width: 360px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 4px; }
+  .tabs button { background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 4px; color: var(--muted); }
+  .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tabpanel { display: none; }
+  .tabpanel.active { display: block; }
+  .expcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; max-width: 480px; }
+  .expcard h3 { margin: 0 0 4px; font-size: 15px; }
+  .expcard .desc { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  .field input { width: 100%; background: #0d1017; border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 7px 9px; font: inherit; }
+  .field input:invalid { border-color: var(--bad); }
+  .fieldErr { color: var(--bad); font-size: 11.5px; margin-top: 3px; min-height: 14px; }
 </style>
 </head>
 <body>
@@ -55,20 +68,31 @@
 <main>
   <div id="dockerWarn"></div>
 
-  <div class="bar" id="profileBar">
-    <span class="sub" style="margin-right:4px;">Start:</span>
-    <label><input type="checkbox" value="gateway"> gateway</label>
-    <label><input type="checkbox" value="streaming"> streaming</label>
-    <label><input type="checkbox" value="analytics"> analytics</label>
-    <label><input type="checkbox" value="observability"> observability</label>
-    <label><input type="checkbox" value="extras"> extras</label>
-    <button class="primary" id="btnStart">Start selected</button>
-    <div class="spacer"></div>
-    <button id="btnStop">Stop</button>
-    <button class="danger" id="btnReset">Reset (wipes data)</button>
+  <div class="tabs">
+    <button class="active" data-tab="infra">Infrastructure</button>
+    <button data-tab="experiments">Experiments</button>
   </div>
 
-  <div id="groups"></div>
+  <div id="tab-infra" class="tabpanel active">
+    <div class="bar" id="profileBar">
+      <span class="sub" style="margin-right:4px;">Start:</span>
+      <label><input type="checkbox" value="gateway"> gateway</label>
+      <label><input type="checkbox" value="streaming"> streaming</label>
+      <label><input type="checkbox" value="analytics"> analytics</label>
+      <label><input type="checkbox" value="observability"> observability</label>
+      <label><input type="checkbox" value="extras"> extras</label>
+      <button class="primary" id="btnStart">Start selected</button>
+      <div class="spacer"></div>
+      <button id="btnStop">Stop</button>
+      <button class="danger" id="btnReset">Reset (wipes data)</button>
+    </div>
+
+    <div id="groups"></div>
+  </div>
+
+  <div id="tab-experiments" class="tabpanel">
+    <div id="experiments"></div>
+  </div>
 
   <div id="logWrap">
     <div id="logHead"><span id="logTitle"></span><span class="sub" id="logStatus"></span></div>
@@ -140,6 +164,7 @@ async function refresh() {
 
 function setButtonsBusy(busy) {
   for (const id of ['btnStart', 'btnStop', 'btnReset']) document.getElementById(id).disabled = busy;
+  document.querySelectorAll('[data-run]').forEach((b) => (b.disabled = busy));
 }
 
 let currentLogRun = null;
@@ -176,6 +201,69 @@ async function postAction(payload) {
   setButtonsBusy(true);
   attachLog(data.runId, payload.action === 'start' ? 'start.sh' : payload.action + '.sh');
 }
+
+// ── Tabs ─────────────────────────────────────────────────────────────────
+for (const btn of document.querySelectorAll('.tabs button')) {
+  btn.addEventListener('click', () => {
+    for (const b of document.querySelectorAll('.tabs button')) b.classList.toggle('active', b === btn);
+    for (const p of document.querySelectorAll('.tabpanel')) p.classList.toggle('active', p.id === 'tab-' + btn.dataset.tab);
+  });
+}
+
+// ── Experiments: form is rendered from the server's own schema, not hardcoded ─
+async function loadExperiments() {
+  const r = await fetch('/api/experiments');
+  const { experiments } = await r.json();
+  const root = document.getElementById('experiments');
+  root.innerHTML = '';
+  for (const exp of experiments) {
+    const card = document.createElement('div');
+    card.className = 'expcard';
+    const fieldsHtml = exp.params.map((p) => {
+      const errId = `err-${exp.id}-${p.name}`;
+      if (p.type === 'number') {
+        return `<div class="field"><label>${p.label}</label>
+          <input data-param="${p.name}" type="number" value="${p.default}"
+                 ${p.min !== undefined ? `min="${p.min}"` : ''} ${p.max !== undefined ? `max="${p.max}"` : ''}>
+          <div class="fieldErr" id="${errId}"></div></div>`;
+      }
+      if (p.type === 'text') {
+        return `<div class="field"><label>${p.label}</label>
+          <input data-param="${p.name}" type="text" value="${p.default}" ${p.pattern ? `pattern="${p.pattern}"` : ''}>
+          <div class="fieldErr" id="${errId}"></div></div>`;
+      }
+      return '';
+    }).join('');
+    card.innerHTML = `
+      <h3>${exp.label}</h3>
+      <div class="desc">${exp.description}${exp.requiresProfiles && exp.requiresProfiles.length ? ` Needs: ${exp.requiresProfiles.join(', ')} running.` : ''}</div>
+      ${fieldsHtml}
+      <button class="primary" data-run="${exp.id}">Run</button>
+    `;
+    root.appendChild(card);
+  }
+  root.querySelectorAll('[data-run]').forEach((btn) => {
+    btn.addEventListener('click', () => runExperiment(btn.dataset.run, btn.closest('.expcard')));
+  });
+}
+
+async function runExperiment(id, cardEl) {
+  cardEl.querySelectorAll('.fieldErr').forEach((e) => (e.textContent = ''));
+  const params = {};
+  cardEl.querySelectorAll('[data-param]').forEach((input) => {
+    params[input.dataset.param] = input.type === 'number' ? Number(input.value) : input.value;
+  });
+  const r = await fetch('/api/experiment', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, params }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(data.error || ('request failed: ' + r.status)); return; }
+  setButtonsBusy(true);
+  attachLog(data.runId, id);
+}
+
+loadExperiments();
 
 document.getElementById('btnStart').addEventListener('click', () => {
   const profiles = [...document.querySelectorAll('#profileBar input:checked')].map((i) => i.value);

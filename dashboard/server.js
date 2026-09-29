@@ -46,6 +46,66 @@ const HTML_PATH = path.join(__dirname, 'dashboard.html');
 // could drift; a hardcoded, reviewed list is the safer trade-off here).
 const PROFILES = ['gateway', 'streaming', 'analytics', 'observability', 'extras'];
 
+// ── Experiments registry ────────────────────────────────────────────────────
+// Data-driven on purpose: the front end fetches this and builds the form from
+// it, so adding a new experiment means appending one object here — no route
+// or HTML changes needed. Each experiment maps to one script under the repo
+// root; params are validated (type, range, pattern) before ever reaching
+// spawn(), which is called with an argv array (never a shell string), so
+// there is no injection surface regardless.
+const EXPERIMENTS = [
+  {
+    id: 'clickstream',
+    label: 'Clickstream producer',
+    description: 'Generates ad click events into the "clickstream" Kafka topic via producer.py.',
+    requiresProfiles: ['streaming'],
+    cmd: './produce.sh',
+    params: [
+      { name: 'events', label: 'Events', type: 'number', default: 500, min: 1, max: 100000 },
+      { name: 'rate', label: 'Rate (events/s)', type: 'number', default: 10, min: 1, max: 1000 },
+      { name: 'users', label: 'Simulated users', type: 'number', default: 500, min: 1, max: 50000 },
+      { name: 'hotAd', label: 'Hot ad id (optional)', type: 'text', default: '', pattern: '^[A-Za-z0-9_-]{0,64}$' },
+      { name: 'buckets', label: 'Hot-ad salt buckets', type: 'number', default: 1, min: 1, max: 32 },
+    ],
+  },
+];
+
+// Turns validated params into the argv for produce.sh: EVENTS RATE [flags...]
+// (produce.sh itself forwards trailing flags straight to producer.py).
+function buildClickstreamArgs(p) {
+  const args = [String(p.events), String(p.rate), '--users', String(p.users)];
+  if (p.hotAd) args.push('--hot-ad', p.hotAd);
+  if (p.buckets > 1) args.push('--buckets', String(p.buckets));
+  return args;
+}
+const EXPERIMENT_BUILDERS = { clickstream: buildClickstreamArgs };
+
+// Validates `input` against `schema`, one field at a time. Throws with a
+// message naming the offending field — never trusts the caller's shape.
+function validateParams(schema, input) {
+  const out = {};
+  for (const p of schema) {
+    let v = input == null ? undefined : input[p.name];
+    if (v === undefined || v === null || v === '') v = p.default;
+    if (p.type === 'number') {
+      v = Number(v);
+      if (!Number.isFinite(v)) throw new Error(`${p.name} must be a number`);
+      if (p.min !== undefined && v < p.min) throw new Error(`${p.name} must be >= ${p.min}`);
+      if (p.max !== undefined && v > p.max) throw new Error(`${p.name} must be <= ${p.max}`);
+      v = Math.trunc(v);
+    } else if (p.type === 'text') {
+      v = String(v);
+      if (p.pattern && !new RegExp(p.pattern).test(v)) throw new Error(`${p.name} has an invalid format`);
+    } else if (p.type === 'boolean') {
+      v = !!v;
+    } else {
+      throw new Error(`unknown param type for ${p.name}`);
+    }
+    out[p.name] = v;
+  }
+  return out;
+}
+
 // The service manifest: what to show, and how to tell if it's up. This mirrors
 // status.sh's checks. `profile: null` means "core" — started by every ./start.sh
 // call, no profile flag needed.
@@ -239,6 +299,30 @@ const server = http.createServer(async (req, res) => {
     current.subscribers.add(res);
     req.on('close', () => current && current.subscribers.delete(res));
     return;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/experiments') {
+    return sendJSON(res, 200, { experiments: EXPERIMENTS });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/experiment') {
+    if (!sameOrigin(req)) return sendJSON(res, 403, { error: 'rejected: Host/Origin did not match this server' });
+    if (current && !current.done) return sendJSON(res, 409, { error: `an action is already running: ${current.label}` });
+
+    let body;
+    try { body = JSON.parse((await readBody(req)) || '{}'); }
+    catch { return sendJSON(res, 400, { error: 'invalid JSON body' }); }
+
+    const exp = EXPERIMENTS.find((e) => e.id === body.id);
+    if (!exp) return sendJSON(res, 400, { error: `unknown experiment: ${body.id}` });
+
+    let params;
+    try { params = validateParams(exp.params, body.params); }
+    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+
+    const args = EXPERIMENT_BUILDERS[exp.id](params);
+    const run = startRun(`${exp.label}: ${args.join(' ')}`, exp.cmd, args);
+    return sendJSON(res, 202, { runId: run.id });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/action') {
