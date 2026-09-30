@@ -8,17 +8,21 @@ kind: Kustomization
 
 namespace: adlab
 
-resources:
   # Foundation
-  - base/namespace.yaml
-  - base/configmap.yaml
-  - base/secrets.yaml
 
   # Data layer — order matters (API depends on these)
-  - postgres/postgres.yaml
-  - redis/redis.yaml
-  - elasticsearch/elasticsearch.yaml
 
   # Application layer
-  - api/api.yaml
-  - api/ingress.yaml
+resources:
+- base/namespace.yaml
+- base/configmap.yaml
+- base/secrets.yaml
+- postgres/postgres.yaml
+- redis/redis.yaml
+- elasticsearch/elasticsearch.yaml
+- api/api.yaml
+- api/ingress.yaml
+images:
+- name: ghcr.io/brunooffs/adlab-api
+  newName: ghcr.io/brunooffs/adlab-api
+  newTag: sha-e8daffe
