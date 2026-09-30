@@ -73,6 +73,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install producer dependencies
+        working-directory: producer
+        run: pip install -r requirements.txt
       - name: Producer unit tests
         working-directory: producer
         run: python3 -m unittest discover -s test -v
@@ -124,6 +127,8 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read   # dorny/paths-filter needs this to query changed files via the API
     outputs:
       api: ${{ steps.filter.outputs.api }}
     steps:
