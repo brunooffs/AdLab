@@ -88,3 +88,4 @@ async function bootstrap() {
 }
 
 bootstrap().catch(err => { console.error(err); process.exit(1) })
+// CI verification touch — remove after confirming build-and-push works
