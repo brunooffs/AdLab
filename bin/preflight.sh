@@ -27,6 +27,22 @@ else
   bad "Docker Compose v2 plugin missing (the 'docker compose' command)"
 fi
 
+# spark/Dockerfile uses `ADD --chmod`, a BuildKit-only feature. Without the
+# buildx CLI plugin, `docker compose build` silently falls back to the legacy
+# builder and fails ~50s into the build with a cryptic "--chmod option
+# requires BuildKit" error — only checked when the streaming profile (which
+# builds spark/Dockerfile) is actually requested.
+for profile in "$@"; do
+  if [ "$profile" = "streaming" ]; then
+    if docker buildx version >/dev/null 2>&1; then
+      ok "buildx ($(docker buildx version 2>/dev/null | awk '{print $2; exit}'))"
+    else
+      bad "docker buildx plugin missing — required to build the Spark image. See CONTRIBUTING.md#troubleshooting"
+    fi
+    break
+  fi
+done
+
 # Memory available to Docker (on macOS/Windows this is the VM's allocation).
 mem_bytes=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
 mem_gb=$(( ${mem_bytes:-0} / 1073741824 ))
