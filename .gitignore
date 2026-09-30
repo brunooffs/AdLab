@@ -18,3 +18,7 @@ venv/
 
 # OS
 .DS_Store
+
+# Sealed Secrets controller key backup — this is a decryption master key,
+# never commit it (see k8s/README.md "Secrets")
+sealed-secrets-key-backup.yaml
