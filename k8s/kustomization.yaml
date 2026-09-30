@@ -21,7 +21,10 @@ resources:
 - redis/redis.yaml
 - elasticsearch/elasticsearch.yaml
 - api/api.yaml
-- api/ingress.yaml
+# api/ingress.yaml removed: minikube's ingress addon depends on
+# ingress-nginx, which Kubernetes retired (no further releases, bug fixes,
+# or security patches). Use `kubectl port-forward` for local access — see
+# k8s/README.md — or bring your own Ingress/Gateway API setup if you need one.
 images:
 - name: ghcr.io/brunooffs/adlab-api
   newName: ghcr.io/brunooffs/adlab-api
