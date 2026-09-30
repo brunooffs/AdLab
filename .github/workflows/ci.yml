@@ -1,0 +1,244 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  ci.yml — replaces api.yml, pr-checks.yml, docker-compose-check.yml.
+#
+#  Design: cheap jobs (lint, unit tests, config validation) run on every push
+#  and PR, unconditionally — they're fast enough that path-filtering them
+#  isn't worth the risk of a filter bug silently skipping a check. Only the
+#  expensive multi-arch image build is gated on whether API-relevant paths
+#  actually changed, via dorny/paths-filter.
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── Cheap checks: always run ────────────────────────────────────────────
+  lint-and-typecheck:
+    name: API — lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+      - name: Install dependencies
+        working-directory: api
+        run: npm ci
+      - name: Generate Prisma client
+        working-directory: api
+        run: npx prisma generate
+      - name: Type check
+        working-directory: api
+        run: npx tsc --noEmit
+
+  unit-tests:
+    name: Unit tests (API, dashboard, producer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+      - name: API unit tests
+        working-directory: api
+        run: npm test
+      - name: Dashboard unit tests
+        # Zero-dependency by design (see dashboard/server.js's own header) —
+        # runs directly under Node's built-in test runner, no npm ci needed.
+        # NOTE: `node --test <dir>` fails to discover tests on this Node
+        # version (misparses the directory as a module to require) — bare
+        # `node --test` with cwd set to the directory is what actually works;
+        # verified directly before relying on it here.
+        working-directory: dashboard
+        run: node --test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Producer unit tests
+        working-directory: producer
+        run: python3 -m unittest discover -s test -v
+
+  validate-configs:
+    name: Validate infrastructure configs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pyyaml
+
+      - name: docker-compose.yml
+        run: docker compose config --quiet && echo "docker-compose.yml OK"
+
+      - name: kong/kong.yml (real parser, not just YAML syntax)
+        run: |
+          docker run --rm -v "$PWD/kong/kong.yml:/kong.yml:ro" \
+            -e "KONG_DATABASE=off" -e "KONG_DECLARATIVE_CONFIG=/kong.yml" \
+            kong:3.9.3-ubuntu kong config parse /kong.yml
+
+      - name: prometheus/prometheus.yml (real parser)
+        run: |
+          docker run --rm -v "$PWD/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            --entrypoint promtool prom/prometheus:v3.13.3 \
+            check config /etc/prometheus/prometheus.yml
+
+      - name: grafana provisioning (datasources + dashboards)
+        run: |
+          python3 -c "
+          import yaml
+          for f in ['grafana/provisioning/datasources/prometheus.yml',
+                    'grafana/provisioning/datasources/tempo.yml',
+                    'grafana/provisioning/dashboards/default.yml']:
+              d = yaml.safe_load(open(f))
+              assert d, f'{f} is empty or invalid'
+              print(f'{f} OK')
+          "
+
+      - name: shellcheck every script
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -qq -y shellcheck
+          find . -name '*.sh' -not -path './node_modules/*' -print0 \
+            | xargs -0 shellcheck -S warning
+
+  # ── PR-time build: catches a broken Dockerfile before merge ─────────────
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'api/**'
+
+  build-pr:
+    name: API — build only (no push)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.api == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          push: false
+          platforms: linux/arm64,linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── main-only: build, push, and update the K8s manifest to match ────────
+  build-and-push:
+    name: API — build, push, tag GitOps manifest
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, unit-tests, changes]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.api == 'true'
+
+    permissions:
+      contents: write   # needed to commit the new image tag back to k8s/
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase image name
+        id: image
+        # GHCR requires a lowercase path; github.repository preserves the
+        # owner's actual casing, so this only matters for a fork with
+        # uppercase letters in its username — cheap insurance either way.
+        run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]' | sed 's#/adlab-lab$#/adlab-api#')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm64,linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image summary
+        run: |
+          echo "### Docker Image Built" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Image:** \`${{ steps.image.outputs.name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tags:** ${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Digest:** ${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Record the new image tag in k8s/ (GitOps — what ArgoCD actually syncs)
+        id: sha
+        run: echo "short=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Update kustomization.yaml and commit
+        working-directory: k8s
+        run: |
+          kustomize edit set image "${{ steps.image.outputs.name }}=${{ steps.image.outputs.name }}:${{ steps.sha.outputs.short }}"
+          cd ..
+          if git diff --quiet -- k8s/kustomization.yaml; then
+            echo "No change to k8s/kustomization.yaml — image tag already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/kustomization.yaml
+          git commit -m "k8s: bump adlab-api image to ${{ steps.sha.outputs.short }} [skip ci]"
+          # [skip ci] avoids this commit re-triggering this same workflow.
+          # Not strictly required — ci.yml has no path filter on k8s/, and a
+          # GITHUB_TOKEN-authored push doesn't re-trigger push events anyway
+          # — but it stays as a clear, load-bearing signal of intent in the
+          # commit log if either of those facts ever changes.
+          git push

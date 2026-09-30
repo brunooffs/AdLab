@@ -405,6 +405,14 @@ const server = http.createServer(async (req, res) => {
   sendJSON(res, 404, { error: 'not found' });
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`AdLab dashboard: http://${HOST}:${PORT}  (bound to ${HOST} only — not reachable from the network)`);
-});
+// Only actually bind a socket when run directly (`node server.js`). When
+// this file is `require()`d — by the unit tests, for its pure functions —
+// nothing here should open a real listener.
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    console.log(`AdLab dashboard: http://${HOST}:${PORT}  (bound to ${HOST} only — not reachable from the network)`);
+  });
+}
+
+// Exported for dashboard/test/*.test.js — pure functions only, no side effects.
+module.exports = { validateParams, buildClickstreamArgs, EXPERIMENTS, PROFILES };
