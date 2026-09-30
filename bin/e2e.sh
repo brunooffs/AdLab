@@ -17,7 +17,7 @@
 #  Env:    EVENTS=300  RATE=50  TIMEOUT=240 (seconds to wait for aggregates)  POLL=5
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit
 
 EVENTS=${EVENTS:-300}
 RATE=${RATE:-50}
@@ -36,7 +36,7 @@ step() { echo -e "\n${CYAN}▸ $1${NC}"; }
 pass() { echo -e "  ${GREEN}✓${NC} $1"; }
 fail() { echo -e "  ${RED}✗${NC} $1"; failures=$((failures + 1)); }
 die()  { echo -e "  ${RED}✗${NC} $1"; exit 1; }
-kx()   { docker exec kafka /opt/kafka/bin/"$@"; }
+kx()   { local bin="$1"; shift; docker exec kafka "/opt/kafka/bin/$bin" "$@"; }
 show_log_problems() {   # show_log_problems FILE — first errors (the root cause) + the tail
   echo "  --- first errors in $(basename "$1") ---"
   grep -nE "ERROR|Exception|Caused by|Traceback" "$1" 2>/dev/null | head -12 | cut -c1-220 | sed 's/^/      /'

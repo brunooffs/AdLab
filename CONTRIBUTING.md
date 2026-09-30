@@ -51,6 +51,48 @@ changes behavior with no evidence it was run is harder to review and slower to m
 CI runs type-checking and config validation automatically; you don't need to reproduce that
 locally, only the parts in the table above that CI doesn't cover yet (the full pipeline).
 
+## Troubleshooting
+
+Two gaps that show up on a fresh Linux install, since `preflight.sh` cannot always
+catch them before they cause a confusing mid-build failure:
+
+- **`docker compose` not found**, but `docker` itself works. Your distro's own Docker
+  package (e.g. Ubuntu's `docker.io`) doesn't include the Compose v2 plugin. Install it
+  without needing Docker's official apt repo:
+
+  ```bash
+  DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+  mkdir -p $DOCKER_CONFIG/cli-plugins
+  curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+    -o $DOCKER_CONFIG/cli-plugins/docker-compose
+  chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+  docker compose version
+  ```
+
+- **`./start.sh streaming` fails ~50s in** with `the --chmod option requires BuildKit`.
+  `spark/Dockerfile` uses a BuildKit-only feature; without the `buildx` CLI plugin,
+  Compose silently falls back to the legacy builder instead of erroring up front
+  (`preflight.sh` now catches this before it wastes your time — update if you're on an
+  older checkout). Fix the same way as Compose above:
+
+  ```bash
+  DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+  mkdir -p $DOCKER_CONFIG/cli-plugins
+  TAG=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
+  curl -SL "https://github.com/docker/buildx/releases/download/${TAG}/buildx-${TAG}.linux-amd64" \
+    -o $DOCKER_CONFIG/cli-plugins/docker-buildx
+  chmod +x $DOCKER_CONFIG/cli-plugins/docker-buildx
+  docker buildx version
+  ```
+
+  If `$TAG` comes back empty (GitHub's unauthenticated API is rate-limited per IP),
+  check https://github.com/docker/buildx/releases/latest for the current tag and
+  substitute it directly.
+
+  Either package can also be installed via your distro's apt/yum repo instead, if
+  you've set up Docker's official repository — `docker-compose-plugin` and
+  `docker-buildx-plugin` respectively — which has the advantage of auto-updating.
+
 ## Reporting a bug
 
 Include:

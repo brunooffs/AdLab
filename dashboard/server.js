@@ -80,6 +80,29 @@ function buildClickstreamArgs(p) {
 }
 const EXPERIMENT_BUILDERS = { clickstream: buildClickstreamArgs };
 
+// ── Tutorials registry ──────────────────────────────────────────────────────
+// Same data-driven shape as EXPERIMENTS: one entry per chapter, so adding a
+// chapter later is "add a .md file, add one line here" — no route changes.
+// `available: false` chapters render as a locked placeholder instead of 404ing;
+// use that for chapters blocked on other work (see the .md files' own notes).
+const TUTORIALS = [
+  { id: '00', title: 'Setup and mental model', file: '00-setup-and-mental-model.md', available: true },
+  { id: '01', title: 'Containers and Compose as a mini-datacenter', file: '01-containers-and-compose.md', available: true },
+  { id: '02', title: 'PostgreSQL and Prisma: the system of record', file: '02-postgres-and-prisma.md', available: true },
+  { id: '03', title: 'Redis: caching and its failure modes', file: '03-redis.md', available: true },
+  { id: '04', title: 'Kafka: topics, partitions, consumer groups', file: '04-kafka.md', available: true },
+  { id: '05', title: 'Spark Structured Streaming: watermarks', file: '05-spark-watermarks.md', available: true },
+  { id: '06', title: 'Elasticsearch and Kibana: indexing and search', file: '06-elasticsearch-kibana.md', available: true },
+  { id: '07', title: 'CQRS: commands, events, projections', file: '07-cqrs.md', available: true },
+  { id: '08', title: 'Kong: the gateway', file: '08-kong.md', available: true },
+  { id: '09', title: 'Observability: metrics, traces, dashboards', file: '09-observability.md', available: true },
+  { id: '10', title: 'Kubernetes and Kustomize', file: '10-kubernetes.md', available: false, blockedOn: 'the Kubernetes pass' },
+  { id: '11', title: 'GitOps with ArgoCD', file: '11-gitops-argocd.md', available: false, blockedOn: 'the Kubernetes pass' },
+  { id: '12', title: 'CI/CD with GitHub Actions', file: '12-cicd.md', available: false, blockedOn: 'CI hardening' },
+  { id: '13', title: 'Capstone: debug a broken system', file: '13-capstone.md', available: false },
+];
+const TUTORIAL_DIR = path.join(REPO_ROOT, 'tutorial', 'chapters');
+
 // Validates `input` against `schema`, one field at a time. Throws with a
 // message naming the offending field — never trusts the caller's shape.
 function validateParams(schema, input) {
@@ -301,6 +324,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/tutorials') {
+    // Strip `file` from what the client sees — it's a server-side detail, not
+    // something the front end should ever construct itself.
+    const list = TUTORIALS.map(({ id, title, available, blockedOn }) => ({ id, title, available, blockedOn }));
+    return sendJSON(res, 200, { chapters: list });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/tutorials/chapter') {
+    const id = url.searchParams.get('id');
+    const chapter = TUTORIALS.find((c) => c.id === id);
+    if (!chapter) return sendJSON(res, 404, { error: 'unknown chapter' });
+    if (!chapter.available) return sendJSON(res, 404, { error: 'chapter not written yet', blockedOn: chapter.blockedOn || null });
+    // `chapter.file` is server-controlled (from the fixed TUTORIALS array above,
+    // never from the request), so there is no path-traversal surface here even
+    // though we don't separately sanitize `id`.
+    fs.readFile(path.join(TUTORIAL_DIR, chapter.file), 'utf8', (err, text) => {
+      if (err) return sendJSON(res, 500, { error: 'chapter file missing on disk: ' + chapter.file });
+      res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+      res.end(text);
+    });
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/experiments') {
     return sendJSON(res, 200, { experiments: EXPERIMENTS });
   }
@@ -359,6 +405,14 @@ const server = http.createServer(async (req, res) => {
   sendJSON(res, 404, { error: 'not found' });
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`AdLab dashboard: http://${HOST}:${PORT}  (bound to ${HOST} only — not reachable from the network)`);
-});
+// Only actually bind a socket when run directly (`node server.js`). When
+// this file is `require()`d — by the unit tests, for its pure functions —
+// nothing here should open a real listener.
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    console.log(`AdLab dashboard: http://${HOST}:${PORT}  (bound to ${HOST} only — not reachable from the network)`);
+  });
+}
+
+// Exported for dashboard/test/*.test.js — pure functions only, no side effects.
+module.exports = { validateParams, buildClickstreamArgs, EXPERIMENTS, PROFILES };

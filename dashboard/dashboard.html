@@ -58,6 +58,28 @@
   .field input { width: 100%; background: #0d1017; border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 7px 9px; font: inherit; }
   .field input:invalid { border-color: var(--bad); }
   .fieldErr { color: var(--bad); font-size: 11.5px; margin-top: 3px; min-height: 14px; }
+  .tutlayout { display: flex; gap: 20px; align-items: flex-start; }
+  #tutNav { flex: 0 0 250px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }
+  #tutNav button { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 7px 10px; color: var(--muted); font-size: 12.5px; }
+  #tutNav button.current { background: var(--panel); border-color: var(--line); color: var(--text); }
+  #tutNav button:disabled { color: #4b5263; cursor: default; }
+  #tutNav button .num { color: var(--accent); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  #tutNav .locked-note { font-size: 10.5px; color: #4b5263; margin-left: 26px; }
+  #tutContent { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 24px 28px; max-width: 720px; }
+  #tutContent h1 { font-size: 21px; margin-top: 0; }
+  #tutContent h2 { font-size: 16px; margin-top: 28px; border-top: 1px solid var(--line); padding-top: 18px; }
+  #tutContent h3 { font-size: 14px; color: var(--accent); }
+  #tutContent p { line-height: 1.65; color: #cbd0db; }
+  #tutContent a { color: var(--accent); }
+  #tutContent code { background: #0d1017; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font: 12.5px ui-monospace, Menlo, monospace; }
+  #tutContent pre { background: #05070a; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+  #tutContent pre code { background: none; border: none; padding: 0; }
+  #tutContent pre.mermaid-src { position: relative; }
+  #tutContent pre.mermaid-src::before { content: "diagram source (rendered on GitHub)"; display: block; font: 11px sans-serif; color: var(--muted); margin-bottom: 6px; }
+  #tutContent blockquote { margin: 14px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+  #tutContent ul { padding-left: 22px; line-height: 1.7; color: #cbd0db; }
+  #tutContent table { border-collapse: collapse; margin: 12px 0; }
+  #tutContent th, #tutContent td { border: 1px solid var(--line); padding: 5px 10px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -71,6 +93,7 @@
   <div class="tabs">
     <button class="active" data-tab="infra">Infrastructure</button>
     <button data-tab="experiments">Experiments</button>
+    <button data-tab="tutorial">Tutorials</button>
   </div>
 
   <div id="tab-infra" class="tabpanel active">
@@ -92,6 +115,13 @@
 
   <div id="tab-experiments" class="tabpanel">
     <div id="experiments"></div>
+  </div>
+
+  <div id="tab-tutorial" class="tabpanel">
+    <div class="tutlayout">
+      <nav id="tutNav"></nav>
+      <article id="tutContent"><p class="sub">Loading…</p></article>
+    </div>
   </div>
 
   <div id="logWrap">
@@ -264,6 +294,121 @@ async function runExperiment(id, cardEl) {
 }
 
 loadExperiments();
+
+// ── Tutorials ────────────────────────────────────────────────────────────
+// Minimal Markdown-subset renderer — deliberately not a general parser.
+// Handles: headers, bold/italic, inline code, fenced code blocks (mermaid
+// fences render as labeled source, since a real diagram renderer would break
+// the zero-dependency constraint), links, unordered lists, blockquotes,
+// paragraphs. Anything fancier (tables in source, nested lists) will render
+// literally rather than break — chapters are written knowing this.
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function renderInline(s) {
+  s = escapeHtml(s);
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s;
+}
+function renderMarkdown(md) {
+  const lines = md.replace(/\r\n/g, '\n').split('\n');
+  let html = '';
+  let i = 0;
+  let inList = false;
+  let para = [];              // buffered lines of the paragraph/list-item in progress
+  const flushPara = () => {
+    if (para.length) { html += `<p>${renderInline(para.join(' '))}</p>`; para = []; }
+  };
+  const closeList = () => { flushListItem(); if (inList) { html += '</ul>'; inList = false; } };
+  let listItem = [];          // buffered lines of the current <li>, across continuation lines
+  const flushListItem = () => {
+    if (listItem.length) { html += `<li>${renderInline(listItem.join(' '))}</li>`; listItem = []; }
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    const fence = line.match(/^```(\w*)/);
+    if (fence) {
+      flushPara(); closeList();
+      const lang = fence[1];
+      const body = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) { body.push(lines[i]); i++; }
+      i++; // skip closing fence
+      const cls = lang === 'mermaid' ? ' class="mermaid-src"' : '';
+      html += `<pre${cls}><code>${escapeHtml(body.join('\n'))}</code></pre>`;
+      continue;
+    }
+    const h = line.match(/^(#{1,3})\s+(.*)/);
+    if (h) { flushPara(); closeList(); html += `<h${h[1].length}>${renderInline(h[2])}</h${h[1].length}>`; i++; continue; }
+    const li = line.match(/^[-*]\s+(.*)/);
+    if (li) {
+      flushPara();
+      if (!inList) { html += '<ul>'; inList = true; } else { flushListItem(); }
+      listItem.push(li[1]);
+      i++; continue;
+    }
+    // A continuation line: indented (or just non-blank) text right after a list
+    // item, with no bullet of its own — CommonMark treats this as part of the
+    // same item. Only applies while we're inside a list.
+    if (inList && listItem.length && line.trim() !== '' && !line.match(/^>\s?/)) {
+      listItem.push(line.trim());
+      i++; continue;
+    }
+    const bq = line.match(/^>\s?(.*)/);
+    if (bq) { flushPara(); closeList(); html += `<blockquote>${renderInline(bq[1])}</blockquote>`; i++; continue; }
+    if (line.trim() === '') { flushPara(); closeList(); i++; continue; }
+    closeList();
+    para.push(line.trim());
+    i++;
+  }
+  flushPara(); closeList();
+  return html;
+}
+
+let tutChapters = [];
+let tutCurrent = null;
+
+async function loadTutorialNav() {
+  const r = await fetch('/api/tutorials');
+  const { chapters } = await r.json();
+  tutChapters = chapters;
+  const nav = document.getElementById('tutNav');
+  nav.innerHTML = '';
+  for (const c of chapters) {
+    const btn = document.createElement('button');
+    btn.innerHTML = `<span class="num">${c.id}</span>${c.title}`;
+    if (!c.available) {
+      btn.disabled = true;
+      btn.title = c.blockedOn ? `Coming after: ${c.blockedOn}` : 'Coming soon';
+    } else {
+      btn.addEventListener('click', () => openChapter(c.id));
+    }
+    nav.appendChild(btn);
+    if (!c.available && c.blockedOn) {
+      const note = document.createElement('div');
+      note.className = 'locked-note';
+      note.textContent = `after ${c.blockedOn}`;
+      nav.appendChild(note);
+    }
+  }
+  if (chapters.some((c) => c.available)) openChapter(chapters.find((c) => c.available).id);
+}
+
+async function openChapter(id) {
+  tutCurrent = id;
+  document.querySelectorAll('#tutNav button').forEach((b, idx) => b.classList.toggle('current', tutChapters[idx] && tutChapters[idx].id === id));
+  const content = document.getElementById('tutContent');
+  content.innerHTML = '<p class="sub">Loading…</p>';
+  const r = await fetch('/api/tutorials/chapter?id=' + encodeURIComponent(id));
+  if (!r.ok) { content.innerHTML = '<p class="sub">This chapter is not written yet.</p>'; return; }
+  const md = await r.text();
+  content.innerHTML = renderMarkdown(md);
+}
+
+loadTutorialNav();
 
 document.getElementById('btnStart').addEventListener('click', () => {
   const profiles = [...document.querySelectorAll('#profileBar input:checked')].map((i) => i.value);
