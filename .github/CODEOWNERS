@@ -1,0 +1,9 @@
+# CODEOWNERS — combined with the "Require review from Code Owners" branch
+# protection rule on main, this makes @brunooffs a mandatory reviewer on
+# every pull request, regardless of who else approves.
+#
+# One rule, applying to everything: this file alone does nothing by itself —
+# it only takes effect once that branch protection setting is turned on (see
+# CONTRIBUTING.md). Narrow this to specific paths later if some areas (docs,
+# tutorial chapters) end up wanting lighter review than infra/CI/API changes.
+* @brunooffs
