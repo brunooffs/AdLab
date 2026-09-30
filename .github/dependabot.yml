@@ -1,0 +1,72 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  dependabot.yml — automated dependency update PRs.
+#
+#  Scope, deliberately: Dependabot's `docker` ecosystem only reads `FROM`
+#  lines in actual Dockerfiles — it has no visibility into docker-compose.yml's
+#  `image:` tags at all. That means Kafka, Elasticsearch, Postgres, Redis,
+#  Kong, Grafana, Prometheus, Tempo, Cassandra, and Keycloak — every version
+#  in the README's "Versions" table except the three built here — stay a
+#  manually-tracked decision. This file only reaches the three Dockerfiles
+#  this repo actually has, plus the two language ecosystems and the GitHub
+#  Actions pins.
+#
+#  Several deliberately-held-back majors are excluded below with a reason
+#  pointing at the README's "Versions" table — remove an `ignore` entry only
+#  once you've actually done that upgrade, not to silence a PR you haven't
+#  looked at.
+# ─────────────────────────────────────────────────────────────────────────────
+version: 2
+
+updates:
+  # ── API (Node/TypeScript) ──────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /api
+    schedule:
+      interval: weekly
+    groups:
+      opentelemetry:
+        patterns: ["@opentelemetry/*"]
+      fastify:
+        patterns: ["fastify", "@fastify/*", "fastify-plugin"]
+    ignore:
+      # Prisma 7 removes the `$use` middleware api/src/plugins/prisma.ts relies
+      # on for tracing spans, and moves the datasource URL into a separate
+      # config file. Planned, not accidental — see README "Versions".
+      - dependency-name: "prisma"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@prisma/client"
+        update-types: ["version-update:semver-major"]
+
+  # ── Producer (Python) ───────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /producer
+    schedule:
+      interval: weekly
+
+  # ── Docker images this repo actually builds ────────────────────────────────
+  - package-ecosystem: docker
+    directory: /api
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /producer
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /spark
+    schedule:
+      interval: weekly
+    ignore:
+      # Spark 4 moves to Scala 2.13 — every connector jar version in this same
+      # Dockerfile would need to move with it. Planned, not accidental — see
+      # README "Versions".
+      - dependency-name: "apache/spark"
+        update-types: ["version-update:semver-major"]
+
+  # ── GitHub Actions pins used in ci.yml ──────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
