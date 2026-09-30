@@ -100,10 +100,22 @@ private key, which lives only in your cluster.
 ```bash
 # Install ArgoCD
 kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# --server-side is required, not optional: ArgoCD's ApplicationSet CRD is
+# large enough that plain `kubectl apply` (client-side) fails with
+# "metadata.annotations: Too long: may not be more than 262144 bytes" — that
+# annotation stores the whole object, and this CRD's schema is bigger than
+# the 256 KiB Kubernetes allows for any single annotation. Server-side apply
+# tracks changes via managedFields instead, so the limit never applies.
+# --force-conflicts only matters on a second install over an existing one
+# (harmless, and necessary, on a first install too).
+kubectl apply -n argocd --server-side --force-conflicts \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-# Wait for ArgoCD to be ready
-kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+# Wait for EVERY ArgoCD pod, not just argocd-server — argocd-repo-server is
+# what actually clones and renders your manifests, and a comparison attempt
+# that beats it to Ready fails with a misleading "connection refused" that
+# then sits cached until the next refresh.
+kubectl wait --for=condition=ready pod --all -n argocd --timeout=300s
 
 # Get initial admin password
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d

@@ -96,9 +96,9 @@ const TUTORIALS = [
   { id: '07', title: 'CQRS: commands, events, projections', file: '07-cqrs.md', available: true },
   { id: '08', title: 'Kong: the gateway', file: '08-kong.md', available: true },
   { id: '09', title: 'Observability: metrics, traces, dashboards', file: '09-observability.md', available: true },
-  { id: '10', title: 'Kubernetes and Kustomize', file: '10-kubernetes.md', available: false, blockedOn: 'the Kubernetes pass' },
-  { id: '11', title: 'GitOps with ArgoCD', file: '11-gitops-argocd.md', available: false, blockedOn: 'the Kubernetes pass' },
-  { id: '12', title: 'CI/CD with GitHub Actions', file: '12-cicd.md', available: false, blockedOn: 'CI hardening' },
+  { id: '10', title: 'Kubernetes and Kustomize', file: '10-kubernetes.md', available: true },
+  { id: '11', title: 'GitOps with ArgoCD', file: '11-gitops-argocd.md', available: true },
+  { id: '12', title: 'CI/CD with GitHub Actions', file: '12-cicd.md', available: true },
   { id: '13', title: 'Capstone: debug a broken system', file: '13-capstone.md', available: false },
 ];
 const TUTORIAL_DIR = path.join(REPO_ROOT, 'tutorial', 'chapters');
