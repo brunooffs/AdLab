@@ -12,7 +12,8 @@ It is a **learning environment, not a production system.** Credentials are lab d
 port is bound to `127.0.0.1`.
 
 > **Status:** the analytics pipeline, API, observability and CI-style checks are verified end to end
-> (see [Verify it works](#verify-it-works)). The 0-to-Hero tutorial chapters are planned, not written yet.
+> (see [Verify it works](#verify-it-works)). The 0-to-Hero tutorial lives in the dashboard's
+> **Tutorials** tab (`node dashboard/server.js`) — chapter 0 is up, more chapters land incrementally.
 > The Kubernetes/GitOps part is [experimental](#kubernetes-and-gitops-experimental).
 
 ## Architecture
@@ -46,6 +47,11 @@ writes, so the two halves meet in Elasticsearch.
 Requirements: Docker Desktop (macOS/Windows) or Docker Engine with **Compose v2**, plus `bash`,
 `curl` and `python3` on the host. You do **not** need Node or Python installed — the API, Spark and
 the producer all run in containers.
+
+> **Fresh Linux install?** Your distro's own Docker package (e.g. Ubuntu's `docker.io`) often
+> lacks the Compose v2 and `buildx` plugins that `docker.com`'s own install doesn't. `preflight.sh`
+> catches both before they cause a confusing mid-build failure; fixes are in
+> [CONTRIBUTING.md#troubleshooting](CONTRIBUTING.md#troubleshooting).
 
 ```bash
 git clone https://github.com/brunooffs/adlab-lab.git
@@ -193,7 +199,8 @@ Kafka or Spark, and is being reviewed — treat it as a starting point, not a te
 - No event deduplication, and the Redis speed layer is read but never written (see the table above).
 - Prisma is on 5.x: its `$use` middleware, used for tracing spans, is removed in Prisma 7, so that
   upgrade is a separate piece of work.
-- Verified on Apple Silicon; the images are multi-arch, and Intel/Linux verification is in progress.
+- Verified end to end on Apple Silicon (M1) and on Intel Linux (Ubuntu/Debian-based); the images
+  are multi-arch.
 
 ## Troubleshooting
 
