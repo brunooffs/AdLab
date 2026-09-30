@@ -25,4 +25,4 @@ resources:
 images:
 - name: ghcr.io/brunooffs/adlab-api
   newName: ghcr.io/brunooffs/adlab-api
-  newTag: sha-e8daffe
+  newTag: sha-651d3ce
