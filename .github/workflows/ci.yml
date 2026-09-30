@@ -128,6 +128,11 @@ jobs:
     name: Detect changed paths
     runs-on: ubuntu-latest
     permissions:
+      # A job-level permissions: block REPLACES the workflow-level one for
+      # that job, it does not merge — contents: read must be repeated here
+      # or actions/checkout itself fails ("Repository not found", GitHub's
+      # deliberate ambiguous error for missing repo access).
+      contents: read
       pull-requests: read   # dorny/paths-filter needs this to query changed files via the API
     outputs:
       api: ${{ steps.filter.outputs.api }}
