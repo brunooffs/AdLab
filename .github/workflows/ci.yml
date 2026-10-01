@@ -163,7 +163,7 @@ jobs:
     if: github.event_name == 'pull_request' && needs.changes.outputs.api == 'true'
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
       - name: Build (no push)
         uses: docker/build-push-action@v6
@@ -196,7 +196,7 @@ jobs:
         # uppercase letters in its username — cheap insurance either way.
         run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]' | sed 's#/adlab-lab$#/adlab-api#')" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
