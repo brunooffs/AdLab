@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir \
     lz4==4.3.3 \
     psycopg2-binary==2.9.9 \
     sqlalchemy==2.0.30 \
-    python-dotenv==1.0.1
+    python-dotenv==1.0.1 \
+    redis==8.1.0
 COPY producer.py db.py ./
 CMD ["python", "producer.py", "--events", "500", "--rate", "5"]

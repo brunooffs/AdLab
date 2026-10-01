@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from kafka import KafkaProducer
 from kafka.errors import NoBrokersAvailable
+import redis
 
 from db import load_ad_catalogue
 
@@ -31,6 +32,8 @@ load_dotenv()
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9094")
 TOPIC           = os.getenv("KAFKA_TOPIC", "clickstream")
 DEFAULT_RATE    = int(os.getenv("EVENTS_PER_SECOND", "10"))
+REDIS_URL       = os.getenv("REDIS_URL", "redis://localhost:6379")
+DEDUP_TTL_SECONDS = int(os.getenv("DEDUP_TTL_SECONDS", "300"))  # 5 min, matching the design doc
 
 # ── Graceful shutdown ─────────────────────────────────────────────────────────
 running = True
@@ -81,6 +84,30 @@ def create_producer(retries: int = 10) -> KafkaProducer:
             time.sleep(3)
 
     raise RuntimeError(f"Could not connect to Kafka after {retries} attempts")
+
+
+# ── Redis dedup gate ───────────────────────────────────────────────────────────
+# A click is deduplicated BEFORE it reaches Kafka, not after — matching the
+# "Redis dedup cache" stage in the design doc, which sits between the click
+# tracker and the Kafka topic. SET key NX EX is an atomic check-and-set: two
+# producers racing on the same event_id can never both win.
+def create_redis_client(retries: int = 10) -> "redis.Redis":
+    for attempt in range(1, retries + 1):
+        try:
+            r = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=3)
+            r.ping()
+            print(f"Connected to Redis at {REDIS_URL} (dedup TTL: {DEDUP_TTL_SECONDS}s)")
+            return r
+        except redis.exceptions.ConnectionError:
+            print(f"Redis not ready (attempt {attempt}/{retries}) — retrying in 3s...")
+            time.sleep(3)
+    raise RuntimeError(f"Could not connect to Redis after {retries} attempts")
+
+
+def is_duplicate(r: "redis.Redis", event_id: str) -> bool:
+    """True if this event_id was already seen within the TTL window."""
+    was_newly_set = r.set(f"dedup:{event_id}", "1", nx=True, ex=DEDUP_TTL_SECONDS)
+    return not was_newly_set
 
 
 # ── Event generation ──────────────────────────────────────────────────────────
@@ -143,14 +170,15 @@ def get_partition_key(event: dict, n_buckets: int = 1) -> str:
 
 
 # ── Stats printer ─────────────────────────────────────────────────────────────
-def print_stats(sent: int, errors: int, start: float, last_event: dict | None):
+def print_stats(sent: int, errors: int, start: float, last_event: dict | None, deduped: int = 0):
     elapsed  = time.time() - start
     rate     = sent / elapsed if elapsed > 0 else 0
     ts       = datetime.now(timezone.utc).strftime("%H:%M:%S")
     ad_id    = last_event["ad_id"] if last_event else "—"
     action   = last_event["action"] if last_event else "—"
+    dedup_part = f" | deduped={deduped:>4}" if deduped else ""
     print(
-        f"[{ts}] sent={sent:>6} | errors={errors:>3} | "
+        f"[{ts}] sent={sent:>6} | errors={errors:>3}{dedup_part} | "
         f"rate={rate:>6.1f}/s | last={action} on {ad_id}"
     )
 
@@ -168,7 +196,18 @@ def main():
                         help="Salt buckets for hot ad (anti hot-partition)")
     parser.add_argument("--users",   type=int,   default=500,
                         help="Number of simulated users")
+    parser.add_argument("--dedup", action="store_true",
+                        help="Enable Redis-backed dedup: drop events whose id was already sent "
+                             "within DEDUP_TTL_SECONDS (default 300s)")
+    parser.add_argument("--duplicate-rate", type=float, default=0.0,
+                        help="Probability (0.0-1.0) of deliberately resending the previous "
+                             "event verbatim, to demonstrate --dedup catching a real duplicate. "
+                             "Has no effect unless the FIRST event has already been sent.")
     args = parser.parse_args()
+
+    if not (0.0 <= args.duplicate_rate <= 1.0):
+        print("ERROR: --duplicate-rate must be between 0.0 and 1.0")
+        return
 
     # ── Load real ad catalogue from PostgreSQL ────────────────────────────────
     print("Loading ad catalogue from PostgreSQL...")
@@ -189,8 +228,18 @@ def main():
     # ── Connect to Kafka ──────────────────────────────────────────────────────
     producer = create_producer()
 
+    # ── Connect to Redis, only if dedup was actually requested ────────────────
+    redis_client = None
+    if args.dedup:
+        redis_client = create_redis_client()
+        if args.duplicate_rate == 0.0:
+            print("NOTE: --dedup is on but --duplicate-rate is 0 — this producer's own event "
+                  "ids are never naturally repeated (see Chapter 4), so nothing will actually "
+                  "be caught. Add --duplicate-rate 0.2 (or similar) to see it work.")
+
     sent       = 0
     errors     = 0
+    deduped    = 0
     start_time = time.time()
     last_event = None
     interval   = 1.0 / args.rate
@@ -203,14 +252,24 @@ def main():
             break
 
         try:
-            # Pick a random ad from the real catalogue
-            ad = random.choice(catalogue)
+            # Deliberately resend the exact previous event (same event_id) with
+            # probability --duplicate-rate, so --dedup has a real duplicate to
+            # catch. Without this, a fresh session_id every call (see
+            # generate_event_id) means no two events ever collide naturally.
+            if last_event is not None and args.duplicate_rate > 0 and random.random() < args.duplicate_rate:
+                event = last_event
+            else:
+                ad = random.choice(catalogue)
+                event = generate_event(
+                    ad=ad,
+                    users=users,
+                    hot_ad_id=args.hot_ad
+                )
 
-            event = generate_event(
-                ad=ad,
-                users=users,
-                hot_ad_id=args.hot_ad
-            )
+            if redis_client is not None and is_duplicate(redis_client, event["event_id"]):
+                deduped += 1
+                time.sleep(interval)
+                continue
 
             key = get_partition_key(event, n_buckets=args.buckets)
 
@@ -225,7 +284,7 @@ def main():
 
             # Print stats every 100 events
             if sent % 100 == 0:
-                print_stats(sent, errors, start_time, last_event)
+                print_stats(sent, errors, start_time, last_event, deduped)
 
         except Exception as e:
             errors += 1
@@ -238,8 +297,9 @@ def main():
     producer.flush()
     producer.close()
 
-    print_stats(sent, errors, start_time, last_event)
-    print(f"\nDone. Sent {sent} events, {errors} errors.")
+    print_stats(sent, errors, start_time, last_event, deduped)
+    dedup_summary = f", {deduped} deduped" if args.dedup else ""
+    print(f"\nDone. Sent {sent} events, {errors} errors{dedup_summary}.")
 
 
 if __name__ == "__main__":

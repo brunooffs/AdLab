@@ -64,3 +64,30 @@ test('buildClickstreamArgs: never produces a single string (argv-only, no shell 
   for (const a of args) assert.equal(typeof a, 'string')
   assert.ok(Array.isArray(args))
 })
+
+test('validateParams: a param marked float:true is NOT truncated to an integer', () => {
+  // Regression test: validateParams originally Math.trunc()'d every number
+  // param unconditionally, which was correct for events/rate/buckets but
+  // silently rounded duplicateRate: 0.3 down to 0 — the --duplicate-rate
+  // flag then never made it into the built argv at all, with no error
+  // anywhere to indicate why. float:true is the fix; this guards it.
+  const out = validateParams(clickstreamSchema, { duplicateRate: 0.3 })
+  assert.equal(out.duplicateRate, 0.3)
+})
+
+test('validateParams: params without float:true still truncate (no regression)', () => {
+  const out = validateParams(clickstreamSchema, { events: 250.9, rate: 25.4, buckets: 3.99 })
+  assert.equal(out.events, 250)
+  assert.equal(out.rate, 25)
+  assert.equal(out.buckets, 3)
+})
+
+test('buildClickstreamArgs: includes --dedup and --duplicate-rate when set', () => {
+  const args = buildClickstreamArgs({ events: 300, rate: 20, users: 500, hotAd: '', buckets: 1, dedup: true, duplicateRate: 0.25 })
+  assert.deepEqual(args, ['300', '20', '--users', '500', '--dedup', '--duplicate-rate', '0.25'])
+})
+
+test('buildClickstreamArgs: omits dedup flags when dedup is false and duplicateRate is 0', () => {
+  const args = buildClickstreamArgs({ events: 300, rate: 20, users: 500, hotAd: '', buckets: 1, dedup: false, duplicateRate: 0 })
+  assert.deepEqual(args, ['300', '20', '--users', '500'])
+})

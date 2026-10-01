@@ -16,7 +16,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from producer import generate_event_id, get_partition_key  # noqa: E402
+from producer import generate_event_id, get_partition_key, create_redis_client, is_duplicate  # noqa: E402
 
 
 class TestGenerateEventId(unittest.TestCase):
@@ -78,6 +78,49 @@ class TestGetPartitionKey(unittest.TestCase):
         event = {"ad_id": "ad_hot"}
         seen = {get_partition_key(event, n_buckets=4) for _ in range(200)}
         self.assertGreater(len(seen), 1, "200 calls with 4 buckets should not all land in the same bucket")
+
+
+class TestDedup(unittest.TestCase):
+    """
+    Needs a real Redis to run against — CI provides one as a service
+    container (see .github/workflows/ci.yml). REDIS_URL defaults to
+    localhost:6379 for running this locally against `redis-server`.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
+        try:
+            cls.r = create_redis_client(retries=1)
+        except Exception as e:
+            raise unittest.SkipTest(f"no Redis reachable for dedup tests: {e}")
+
+    def setUp(self):
+        self.r.flushdb()
+
+    def test_first_occurrence_is_not_a_duplicate(self):
+        self.assertFalse(is_duplicate(self.r, "evt_a"))
+
+    def test_second_occurrence_of_same_id_is_a_duplicate(self):
+        is_duplicate(self.r, "evt_b")  # first call: records it
+        self.assertTrue(is_duplicate(self.r, "evt_b"))
+
+    def test_different_ids_never_collide(self):
+        self.assertFalse(is_duplicate(self.r, "evt_c"))
+        self.assertFalse(is_duplicate(self.r, "evt_d"))
+
+    def test_ttl_is_actually_set_on_the_dedup_key(self):
+        is_duplicate(self.r, "evt_e")
+        ttl = self.r.ttl("dedup:evt_e")
+        self.assertGreater(ttl, 0)
+        self.assertLessEqual(ttl, 300)
+
+    def test_concurrent_first_write_wins_exactly_once(self):
+        # SET NX EX is atomic — of N calls racing on the same id, exactly one
+        # should see "not a duplicate" and all the rest should see "duplicate".
+        results = [is_duplicate(self.r, "evt_race") for _ in range(10)]
+        self.assertEqual(results.count(False), 1)
+        self.assertEqual(results.count(True), 9)
 
 
 if __name__ == '__main__':

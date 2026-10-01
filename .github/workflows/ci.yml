@@ -48,6 +48,15 @@ jobs:
   unit-tests:
     name: Unit tests (API, dashboard, producer)
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:8.10.2-alpine   # pinned to match docker-compose.yml
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -78,6 +87,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Producer unit tests
         working-directory: producer
+        env:
+          REDIS_URL: redis://localhost:6379
         run: python3 -m unittest discover -s test -v
 
   validate-configs:

@@ -66,6 +66,8 @@ const EXPERIMENTS = [
       { name: 'users', label: 'Simulated users', type: 'number', default: 500, min: 1, max: 50000 },
       { name: 'hotAd', label: 'Hot ad id (optional)', type: 'text', default: '', pattern: '^[A-Za-z0-9_-]{0,64}$' },
       { name: 'buckets', label: 'Hot-ad salt buckets', type: 'number', default: 1, min: 1, max: 32 },
+      { name: 'dedup', label: 'Redis dedup (drop repeats seen within 5 min)', type: 'boolean', default: false },
+      { name: 'duplicateRate', label: 'Deliberate duplicate rate (0-1, demonstrates dedup)', type: 'number', float: true, default: 0, min: 0, max: 1, step: 0.05 },
     ],
   },
 ];
@@ -76,6 +78,8 @@ function buildClickstreamArgs(p) {
   const args = [String(p.events), String(p.rate), '--users', String(p.users)];
   if (p.hotAd) args.push('--hot-ad', p.hotAd);
   if (p.buckets > 1) args.push('--buckets', String(p.buckets));
+  if (p.dedup) args.push('--dedup');
+  if (p.duplicateRate > 0) args.push('--duplicate-rate', String(p.duplicateRate));
   return args;
 }
 const EXPERIMENT_BUILDERS = { clickstream: buildClickstreamArgs };
@@ -115,7 +119,7 @@ function validateParams(schema, input) {
       if (!Number.isFinite(v)) throw new Error(`${p.name} must be a number`);
       if (p.min !== undefined && v < p.min) throw new Error(`${p.name} must be >= ${p.min}`);
       if (p.max !== undefined && v > p.max) throw new Error(`${p.name} must be <= ${p.max}`);
-      v = Math.trunc(v);
+      v = p.float ? v : Math.trunc(v);  // integer by default; set float:true for genuine fractional params
     } else if (p.type === 'text') {
       v = String(v);
       if (p.pattern && !new RegExp(p.pattern).test(v)) throw new Error(`${p.name} has an invalid format`);

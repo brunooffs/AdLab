@@ -254,12 +254,18 @@ async function loadExperiments() {
       if (p.type === 'number') {
         return `<div class="field"><label>${p.label}</label>
           <input data-param="${p.name}" type="number" value="${p.default}"
-                 ${p.min !== undefined ? `min="${p.min}"` : ''} ${p.max !== undefined ? `max="${p.max}"` : ''}>
+                 ${p.min !== undefined ? `min="${p.min}"` : ''} ${p.max !== undefined ? `max="${p.max}"` : ''} ${p.step !== undefined ? `step="${p.step}"` : ''}>
           <div class="fieldErr" id="${errId}"></div></div>`;
       }
       if (p.type === 'text') {
         return `<div class="field"><label>${p.label}</label>
           <input data-param="${p.name}" type="text" value="${p.default}" ${p.pattern ? `pattern="${p.pattern}"` : ''}>
+          <div class="fieldErr" id="${errId}"></div></div>`;
+      }
+      if (p.type === 'boolean') {
+        return `<div class="field"><label style="display:flex; align-items:center; gap:7px;">
+          <input data-param="${p.name}" type="checkbox" style="width:auto;" ${p.default ? 'checked' : ''}>
+          ${p.label}</label>
           <div class="fieldErr" id="${errId}"></div></div>`;
       }
       return '';
@@ -281,7 +287,9 @@ async function runExperiment(id, cardEl) {
   cardEl.querySelectorAll('.fieldErr').forEach((e) => (e.textContent = ''));
   const params = {};
   cardEl.querySelectorAll('[data-param]').forEach((input) => {
-    params[input.dataset.param] = input.type === 'number' ? Number(input.value) : input.value;
+    if (input.type === 'checkbox') params[input.dataset.param] = input.checked;
+    else if (input.type === 'number') params[input.dataset.param] = Number(input.value);
+    else params[input.dataset.param] = input.value;
   });
   const r = await fetch('/api/experiment', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
