@@ -58,6 +58,14 @@
   .field input { width: 100%; background: #0d1017; border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 7px 9px; font: inherit; }
   .field input:invalid { border-color: var(--bad); }
   .fieldErr { color: var(--bad); font-size: 11.5px; margin-top: 3px; min-height: 14px; }
+  .sparkbar { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+  .sparkbar .sparklabel { font-weight: 600; }
+  .sparkbar .sparkstate { color: var(--muted); font-size: 12.5px; }
+  .sparkbar .spacer { flex: 1; }
+  .sparklog { background: #05070a; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: -4px 0 16px; max-height: 110px; overflow: auto; font: 11.5px ui-monospace, Menlo, monospace; color: var(--muted); display: none; }
+  .sparklog.show { display: block; }
+  .expwarn { background: #3a2d14; border: 1px solid #7a5a1a; color: #ffd98a; border-radius: 6px; padding: 7px 10px; font-size: 12px; margin-bottom: 12px; display: none; }
+  .expwarn.show { display: block; }
   .tutlayout { display: flex; gap: 20px; align-items: flex-start; }
   #tutNav { flex: 0 0 250px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; }
   #tutNav button { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 7px 10px; color: var(--muted); font-size: 12.5px; }
@@ -114,6 +122,15 @@
   </div>
 
   <div id="tab-experiments" class="tabpanel">
+    <div class="sparkbar">
+      <span class="dot" id="sparkDot"></span>
+      <span class="sparklabel">Spark streaming job</span>
+      <span class="sparkstate" id="sparkState">checking…</span>
+      <div class="spacer"></div>
+      <button id="btnSparkStart">Start Spark</button>
+      <button id="btnSparkStop" disabled>Stop Spark</button>
+    </div>
+    <div class="sparklog" id="sparkLog"></div>
     <div id="experiments"></div>
   </div>
 
@@ -270,9 +287,11 @@ async function loadExperiments() {
       }
       return '';
     }).join('');
+    const needsSpark = exp.requiresProfiles && exp.requiresProfiles.includes('streaming');
     card.innerHTML = `
       <h3>${exp.label}</h3>
       <div class="desc">${exp.description}${exp.requiresProfiles && exp.requiresProfiles.length ? ` Needs: ${exp.requiresProfiles.join(', ')} running.` : ''}</div>
+      ${needsSpark ? `<div class="expwarn" id="expwarn-${exp.id}">⚠ Spark is not running — events will queue in Kafka until you start it (button above).</div>` : ''}
       ${fieldsHtml}
       <button class="primary" data-run="${exp.id}">Run</button>
     `;
@@ -302,6 +321,73 @@ async function runExperiment(id, cardEl) {
 }
 
 loadExperiments();
+
+// ── Spark control — independent of the experiments/infra run lock, since
+// Spark is meant to keep running while other things happen, not block them.
+let sparkLogRunId = null;
+let sparkEs = null;
+
+function setExpWarnings(sparkRunning) {
+  document.querySelectorAll('[id^="expwarn-"]').forEach((el) => el.classList.toggle('show', !sparkRunning));
+}
+
+async function refreshSparkStatus() {
+  let status;
+  try { status = await (await fetch('/api/spark/status')).json(); }
+  catch { return; }
+  const dot = document.getElementById('sparkDot');
+  const stateEl = document.getElementById('sparkState');
+  const startBtn = document.getElementById('btnSparkStart');
+  const stopBtn = document.getElementById('btnSparkStop');
+  if (!status.reachable) {
+    dot.className = 'dot';
+    stateEl.textContent = 'spark-master unreachable — start the streaming profile first';
+    startBtn.disabled = true; stopBtn.disabled = true;
+  } else if (status.running) {
+    dot.className = 'dot up';
+    stateEl.textContent = `running (${status.appId || 'unknown app'})`;
+    startBtn.disabled = true; stopBtn.disabled = false;
+  } else {
+    dot.className = 'dot';
+    stateEl.textContent = 'not running';
+    startBtn.disabled = false; stopBtn.disabled = true;
+  }
+  setExpWarnings(status.running);
+}
+
+function attachSparkLog(runId) {
+  sparkLogRunId = runId;
+  const wrap = document.getElementById('sparkLog');
+  const logEl = wrap;
+  wrap.classList.add('show');
+  logEl.textContent = '';
+  if (sparkEs) sparkEs.close();
+  sparkEs = new EventSource('/api/spark/logs?run=' + encodeURIComponent(runId));
+  sparkEs.addEventListener('line', (ev) => {
+    logEl.textContent += ev.data.replace(/\\n/g, '\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  });
+  sparkEs.addEventListener('done', () => { sparkEs.close(); sparkEs = null; sparkLogRunId = null; refreshSparkStatus(); });
+  sparkEs.onerror = () => { /* dropped connection; next status poll reflects reality regardless */ };
+}
+
+document.getElementById('btnSparkStart').addEventListener('click', async () => {
+  const r = await fetch('/api/spark/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(data.error || ('request failed: ' + r.status)); return; }
+  attachSparkLog(data.runId);
+  refreshSparkStatus();
+});
+
+document.getElementById('btnSparkStop').addEventListener('click', async () => {
+  const r = await fetch('/api/spark/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { alert(data.error || ('request failed: ' + r.status)); return; }
+  refreshSparkStatus();
+});
+
+refreshSparkStatus();
+setInterval(refreshSparkStatus, 3000);
 
 // ── Tutorials ────────────────────────────────────────────────────────────
 // Minimal Markdown-subset renderer — deliberately not a general parser.

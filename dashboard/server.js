@@ -46,6 +46,89 @@ const HTML_PATH = path.join(__dirname, 'dashboard.html');
 // could drift; a hardcoded, reviewed list is the safer trade-off here).
 const PROFILES = ['gateway', 'streaming', 'analytics', 'observability', 'extras'];
 
+// ── Spark control (independent of the single-run lock below) ───────────────
+// Spark is architecturally different from every other action here: start.sh,
+// produce.sh etc. are bounded and finish; the streaming job is meant to keep
+// running indefinitely. Gating it behind the same `current` lock that every
+// other action shares would mean starting Spark permanently blocks running
+// the Clickstream experiment for as long as Spark stays up — exactly the
+// opposite of what's wanted. So Spark gets its own independent tracking
+// lane (`sparkRun`, mirroring `current`'s shape) and its own status source
+// of truth: polling the Spark Master's own REST API, not just "is the
+// container running" (a running container says nothing about whether the
+// streaming job was ever submitted — this was the actual confusion that
+// prompted building this).
+const SPARK_MASTER_UI = 'http://localhost:8081';
+
+// Mirrors exactly the detection logic spark.sh's own "kill existing apps"
+// step already uses (an inline Python one-liner there) — ported here rather
+// than reinvented, since it's already the proven way to tell a live
+// application apart from a finished one on a Spark Standalone cluster.
+async function sparkAppStatus() {
+  try {
+    const res = await fetch(`${SPARK_MASTER_UI}/api/v1/applications`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return { reachable: false, running: false };
+    const apps = await res.json();
+    for (const a of apps) {
+      const attempts = a.attempts || [{}];
+      const first = attempts[0] || {};
+      const completed = first.completed === undefined ? true : first.completed;
+      if (!completed) {
+        return { reachable: true, running: true, appId: a.id, name: a.name, startTime: first.startTime };
+      }
+    }
+    return { reachable: true, running: false };
+  } catch {
+    return { reachable: false, running: false };
+  }
+}
+
+// Same REST call spark.sh itself makes to clear a prior run before
+// resubmitting — reused here for an explicit Stop, rather than trying to
+// signal the `docker exec` process from outside (unreliable: killing the
+// local exec session does not reliably propagate into the container).
+async function sparkAppKill(appId) {
+  try {
+    const res = await fetch(
+      `${SPARK_MASTER_UI}/app/kill/?id=${encodeURIComponent(appId)}&terminate=true`,
+      { method: 'POST', signal: AbortSignal.timeout(5000) }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+let sparkRun = null; // { id, buffer:[], subscribers:Set, done:null|{code} } — independent of `current`
+
+function startSparkRun() {
+  const id = String(Date.now());
+  const run = { id, buffer: [], subscribers: new Set(), done: null };
+  sparkRun = run;
+  const child = spawn('./spark.sh', [], { cwd: REPO_ROOT, env: process.env });
+  const push = (chunk) => {
+    const text = chunk.toString();
+    run.buffer.push(text);
+    if (run.buffer.length > 4000) run.buffer.shift();
+    for (const res of run.subscribers) writeSSE(res, 'line', text);
+  };
+  child.stdout.on('data', push);
+  child.stderr.on('data', push);
+  child.on('close', (code) => {
+    run.done = { code };
+    for (const res of run.subscribers) { writeSSE(res, 'done', { code }); res.end(); }
+    run.subscribers.clear();
+  });
+  child.on('error', (e) => {
+    run.done = { code: -1 };
+    const msg = `\n[dashboard] failed to start: ${e.message}\n`;
+    run.buffer.push(msg);
+    for (const res of run.subscribers) { writeSSE(res, 'line', msg); writeSSE(res, 'done', { code: -1 }); res.end(); }
+    run.subscribers.clear();
+  });
+  return run;
+}
+
 // ── Experiments registry ────────────────────────────────────────────────────
 // Data-driven on purpose: the front end fetches this and builds the form from
 // it, so adding a new experiment means appending one object here — no route
@@ -373,6 +456,45 @@ const server = http.createServer(async (req, res) => {
     const args = EXPERIMENT_BUILDERS[exp.id](params);
     const run = startRun(`${exp.label}: ${args.join(' ')}`, exp.cmd, args);
     return sendJSON(res, 202, { runId: run.id });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/spark/status') {
+    const status = await sparkAppStatus();
+    status.managedByDashboard = !!(sparkRun && !sparkRun.done);
+    return sendJSON(res, 200, status);
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/spark/start') {
+    if (!sameOrigin(req)) return sendJSON(res, 403, { error: 'rejected: Host/Origin did not match this server' });
+    if (sparkRun && !sparkRun.done) return sendJSON(res, 409, { error: 'Spark was already started from this dashboard' });
+    const status = await sparkAppStatus();
+    if (status.running) return sendJSON(res, 409, { error: 'a Spark application is already running (started outside the dashboard?)' });
+    const run = startSparkRun();
+    return sendJSON(res, 202, { runId: run.id });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/spark/stop') {
+    if (!sameOrigin(req)) return sendJSON(res, 403, { error: 'rejected: Host/Origin did not match this server' });
+    const status = await sparkAppStatus();
+    if (!status.running) return sendJSON(res, 400, { error: 'no Spark application is currently running' });
+    const ok = await sparkAppKill(status.appId);
+    if (!ok) return sendJSON(res, 502, { error: 'failed to reach Spark Master to stop the application' });
+    return sendJSON(res, 202, { stopped: status.appId });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/spark/logs') {
+    const id = url.searchParams.get('run');
+    if (!sparkRun || sparkRun.id !== id) return sendJSON(res, 404, { error: 'no such run' });
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    for (const line of sparkRun.buffer) writeSSE(res, 'line', line);
+    if (sparkRun.done) { writeSSE(res, 'done', sparkRun.done); return res.end(); }
+    sparkRun.subscribers.add(res);
+    req.on('close', () => sparkRun && sparkRun.subscribers.delete(res));
+    return;
   }
 
   if (req.method === 'POST' && url.pathname === '/api/action') {
