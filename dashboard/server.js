@@ -153,6 +153,16 @@ const EXPERIMENTS = [
       { name: 'duplicateRate', label: 'Deliberate duplicate rate (0-1, demonstrates dedup)', type: 'number', float: true, default: 0, min: 0, max: 1, step: 0.05 },
     ],
   },
+  {
+    id: 'agent',
+    label: 'Campaign analyst (AI agent)',
+    description: 'Read-only agent: asks Gemini your question, which calls AdLab\'s own metrics/advertiser endpoints as tools and answers from the real data. Nothing it does can write or change anything.',
+    requiresProfiles: [],
+    cmd: './run_agent.sh',
+    params: [
+      { name: 'question', label: 'Question', type: 'text', default: "What's trending right now, and is there anything interesting about it?", pattern: '^.{1,500}$' },
+    ],
+  },
 ];
 
 // Turns validated params into the argv for produce.sh: EVENTS RATE [flags...]
@@ -165,7 +175,10 @@ function buildClickstreamArgs(p) {
   if (p.duplicateRate > 0) args.push('--duplicate-rate', String(p.duplicateRate));
   return args;
 }
-const EXPERIMENT_BUILDERS = { clickstream: buildClickstreamArgs };
+function buildAgentArgs(p) {
+  return [p.question];
+}
+const EXPERIMENT_BUILDERS = { clickstream: buildClickstreamArgs, agent: buildAgentArgs };
 
 // ── Tutorials registry ──────────────────────────────────────────────────────
 // Same data-driven shape as EXPERIMENTS: one entry per chapter, so adding a

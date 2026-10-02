@@ -349,6 +349,16 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
+  agent:
+    build: ./agent
+    profiles: ["tools"]
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}   # from .env — see .env.example
+      API_BASE_URL: http://api:3000
+    depends_on:
+      api:
+        condition: service_healthy
     networks:
       - pipeline
 
