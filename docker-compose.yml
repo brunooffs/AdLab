@@ -352,7 +352,14 @@ services:
 
   agent:
     build: ./agent
-    profiles: ["tools"]
+    # Its own profile, deliberately not "tools" (shared with producer).
+    # producer depends on kafka (profile "streaming"); Compose validates
+    # the whole project's dependency graph before running anything, and a
+    # service in an active profile cannot depend on a service in an
+    # inactive one — "service producer depends on undefined service kafka".
+    # Giving agent its own profile means activating it never pulls
+    # producer (and kafka) into that validation at all.
+    profiles: ["agent"]
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}   # from .env — see .env.example
       API_BASE_URL: http://api:3000
