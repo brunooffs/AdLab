@@ -291,7 +291,7 @@ async function loadExperiments() {
     card.innerHTML = `
       <h3>${exp.label}</h3>
       <div class="desc">${exp.description}${exp.requiresProfiles && exp.requiresProfiles.length ? ` Needs: ${exp.requiresProfiles.join(', ')} running.` : ''}</div>
-      ${needsSpark ? `<div class="expwarn" id="expwarn-${exp.id}">⚠ Spark is not running — events will queue in Kafka until you start it (button above).</div>` : ''}
+      ${needsSpark ? `<div class="expwarn" id="expwarn-${exp.id}">⚠ Checking Spark status…</div>` : ''}
       ${fieldsHtml}
       <button class="primary" data-run="${exp.id}">Run</button>
     `;
@@ -327,8 +327,14 @@ loadExperiments();
 let sparkLogRunId = null;
 let sparkEs = null;
 
-function setExpWarnings(sparkRunning) {
-  document.querySelectorAll('[id^="expwarn-"]').forEach((el) => el.classList.toggle('show', !sparkRunning));
+function setExpWarnings(status) {
+  const msg = !status.reachable
+    ? '⚠ Spark isn\'t running yet — start the streaming profile first (Kafka + Spark), then use "Start Spark" above.'
+    : '⚠ Spark is not running — events will queue in Kafka until you start it (button above).';
+  document.querySelectorAll('[id^="expwarn-"]').forEach((el) => {
+    el.classList.toggle('show', !status.running);
+    el.textContent = msg;
+  });
 }
 
 async function refreshSparkStatus() {
@@ -352,7 +358,7 @@ async function refreshSparkStatus() {
     stateEl.textContent = 'not running';
     startBtn.disabled = false; stopBtn.disabled = true;
   }
-  setExpWarnings(status.running);
+  setExpWarnings(status);
 }
 
 function attachSparkLog(runId) {
