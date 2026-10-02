@@ -51,10 +51,20 @@ export async function metricsRoutes(app: FastifyInstance) {
       app.log.warn('ES not available — returning Redis data only')
     }
 
-    // Hot path: partial 10-second buckets from Redis
+    // Hot path: partial 10-second buckets from Redis. Both ends of the
+    // window are clamped to "now" — the speed layer only ever covers the
+    // last couple of minutes before Spark's next batch lands, regardless of
+    // what from/to the caller asked for; anything older than that is already
+    // covered by the `confirmed` aggregate above. Without the upper clamp, a
+    // caller-supplied `to` (e.g. a deliberately wide range, or just a typo)
+    // sails straight into the loop bound unchecked: `to=9999999999` builds
+    // an 820-million-entry key array and OOM-crashes the whole process
+    // (api runs with NODE_OPTIONS --max-old-space-size=512) — confirmed by
+    // reproducing it. `from` was already clamped on the way in; `to` was not.
     const keys: string[] = []
     const redisStart = Math.max(query.from, now - 120)
-    for (let b = Math.floor(redisStart / 10) * 10; b <= query.to; b += 10) {
+    const redisEnd   = Math.min(query.to, now + 10)
+    for (let b = Math.floor(redisStart / 10) * 10; b <= redisEnd; b += 10) {
       keys.push(`clicks:${query.ad_id}:${b}`)
     }
     const vals = keys.length > 0 ? await app.redis.mget(...keys) : []
