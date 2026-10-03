@@ -187,11 +187,13 @@ docs/                design reference
 docker-compose.yml   the whole stack, split into profiles
 ```
 
-## Kubernetes and GitOps (experimental)
+## Kubernetes and GitOps
 
 `k8s/` holds manifests for the **API tier only** (PostgreSQL, Redis, Elasticsearch, API) and an
-ArgoCD application that syncs them from this repository. It is not covered by `bin/e2e.sh`, has no
-Kafka or Spark, and is being reviewed — treat it as a starting point, not a tested path.
+ArgoCD application that syncs them from this repository. It's a separate path from the Quick Start
+above — needs its own tools installed first (minikube, kubectl), and everything from there is run
+by hand rather than through a single script, deliberately — see [`k8s/README.md`](k8s/README.md)
+for the full setup and why. It is not covered by `bin/e2e.sh` and has no Kafka or Spark.
 
 ## Known limitations
 

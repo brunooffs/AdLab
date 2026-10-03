@@ -119,6 +119,14 @@
     </div>
 
     <div id="groups"></div>
+
+    <div class="sparkbar" id="argocdBar" style="margin-top:16px;">
+      <span class="dot" id="argoDot"></span>
+      <span class="sparklabel">Kubernetes / ArgoCD</span>
+      <span class="sparkstate" id="argoState">checking…</span>
+      <div class="spacer"></div>
+      <span class="sparkstate" id="argoContext"></span>
+    </div>
   </div>
 
   <div id="tab-experiments" class="tabpanel">
@@ -394,6 +402,36 @@ document.getElementById('btnSparkStop').addEventListener('click', async () => {
 
 refreshSparkStatus();
 setInterval(refreshSparkStatus, 3000);
+
+// ── ArgoCD status — read-only, optional, external to this repo's own
+// automation. Polled far less often than Spark: each check means two real
+// kubectl subprocess calls (slower, heavier than an HTTP fetch), and ArgoCD's
+// own sync cycle runs on the order of minutes anyway — no value in checking
+// every 3s.
+async function refreshArgoStatus() {
+  let status;
+  try { status = await (await fetch('/api/argocd/status')).json(); }
+  catch { return; }
+  const dot = document.getElementById('argoDot');
+  const stateEl = document.getElementById('argoState');
+  const ctxEl = document.getElementById('argoContext');
+  if (!status.available) {
+    dot.className = 'dot';
+    stateEl.textContent = 'not configured (' + status.reason + ')';
+    ctxEl.textContent = '';
+  } else if (!status.appFound) {
+    dot.className = 'dot';
+    stateEl.textContent = 'no adlab Application found';
+    ctxEl.textContent = 'context: ' + status.context;
+  } else {
+    const healthy = status.sync === 'Synced' && status.health === 'Healthy';
+    dot.className = healthy ? 'dot up' : 'dot';
+    stateEl.textContent = `${status.sync} / ${status.health}` + (status.revision ? ` (${status.revision})` : '');
+    ctxEl.textContent = 'context: ' + status.context;
+  }
+}
+refreshArgoStatus();
+setInterval(refreshArgoStatus, 20000);
 
 // ── Tutorials ────────────────────────────────────────────────────────────
 // Minimal Markdown-subset renderer — deliberately not a general parser.

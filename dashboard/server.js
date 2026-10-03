@@ -102,6 +102,91 @@ async function sparkAppKill(appId) {
   }
 }
 
+// ── ArgoCD status (read-only) ───────────────────────────────────────────────
+// K8s/ArgoCD is optional and external to this repo's own automation — most
+// clones of this project will never have kubectl or a cluster at all, and
+// that has to render as a calm "not configured", not an error. Status only,
+// deliberately: a sync/rollback button would be a real action needing the
+// same confirmation rigor as Spark's Start/Stop, and that's a separate,
+// later addition, not bundled in here.
+//
+// Every kubectl call gets an explicit timeout — confirmed directly (see the
+// commit introducing this) that spawn()'s own `timeout` option genuinely
+// kills a hung process rather than trusting it always returns, the same
+// class of bug just found and fixed in the agent's Gemini calls.
+const KUBECTL_TIMEOUT_MS = 5000;
+
+function runKubectl(args) {
+  return new Promise((resolve) => {
+    let out = '';
+    let err = '';
+    let settled = false;
+    const settle = (result) => { if (!settled) { settled = true; resolve(result); } };
+    let child;
+    try {
+      child = spawn('kubectl', args, { timeout: KUBECTL_TIMEOUT_MS });
+    } catch (e) {
+      return settle({ ok: false, error: e.message });
+    }
+
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err += d; });
+    child.on('error', (e) => {
+      settle({ ok: false, error: e.code === 'ENOENT' ? 'kubectl not found on PATH' : e.message });
+    });
+    child.on('close', (code, signal) => {
+      if (signal === 'SIGTERM' || signal === 'SIGKILL') return settle({ ok: false, error: 'kubectl timed out' });
+      if (code !== 0) return settle({ ok: false, error: (err.trim() || `kubectl exited ${code}`).slice(0, 200) });
+      settle({ ok: true, out });
+    });
+
+    // The hard guarantee: this resolves the caller's request no later than
+    // the deadline, full stop — independent of whether the child (or any
+    // grandchild it may have spawned, e.g. an exec-based credential plugin)
+    // actually finishes exiting. Confirmed directly that relying on the
+    // close event alone isn't safe: a process whose stdout/stderr stay held
+    // open by an orphaned grandchild never fires 'close' at all, no matter
+    // how hard the direct child is killed. Best-effort cleanup still happens
+    // in the background; the dashboard just never waits on it.
+    setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* already gone */ }
+      settle({ ok: false, error: 'kubectl timed out' });
+    }, KUBECTL_TIMEOUT_MS + 500);
+  });
+}
+
+async function argocdStatus() {
+  const ctxResult = await runKubectl(['config', 'current-context']);
+  if (!ctxResult.ok) {
+    return { available: false, reason: ctxResult.error };
+  }
+  const context = ctxResult.out.trim();
+
+  const appResult = await runKubectl(['get', 'application', 'adlab', '-n', 'argocd', '-o', 'json']);
+  if (!appResult.ok) {
+    // kubectl itself works (we have a context) but the Application isn't
+    // there — a real, common state (no cluster up, or ArgoCD never
+    // installed on whatever context is current), not a crash.
+    return { available: true, context, appFound: false, reason: appResult.error };
+  }
+
+  let app;
+  try {
+    app = JSON.parse(appResult.out);
+  } catch {
+    return { available: true, context, appFound: false, reason: 'could not parse kubectl output' };
+  }
+
+  return {
+    available: true,
+    context,
+    appFound: true,
+    sync: app.status?.sync?.status || 'Unknown',
+    health: app.status?.health?.status || 'Unknown',
+    revision: app.status?.sync?.revision ? app.status.sync.revision.slice(0, 7) : null,
+  };
+}
+
 let sparkRun = null; // { id, buffer:[], subscribers:Set, done:null|{code} } — independent of `current`
 
 function startSparkRun() {
@@ -478,6 +563,10 @@ const server = http.createServer(async (req, res) => {
     const status = await sparkAppStatus();
     status.managedByDashboard = !!(sparkRun && !sparkRun.done);
     return sendJSON(res, 200, status);
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/argocd/status') {
+    return sendJSON(res, 200, await argocdStatus());
   }
 
   if (req.method === 'POST' && url.pathname === '/api/spark/start') {

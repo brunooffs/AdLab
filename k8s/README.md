@@ -32,10 +32,27 @@ Gateway API setup if you need one for something beyond this lab.
 
 ## Prerequisites
 
+This is a separate path from the root README's Quick Start — everything here needs its own tools,
+installed on your host, not something `start.sh` sets up for you:
+
+- [minikube](https://minikube.sigs.k8s.io/docs/start/)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl)
+- Docker (already required for the rest of this repo — minikube uses it as its driver)
+
+```bash
+bin/k8s-preflight.sh   # confirms all three are actually on PATH before you start
+```
+
 ```bash
 minikube start --driver=docker --cpus=4 --memory=6g
 minikube addons enable metrics-server   # the HPA needs this to read CPU/memory usage
 ```
+
+Everything from here on is deliberately manual, run one command at a time — not something this
+repo automates into a single script. [Chapter 10](../tutorial/chapters/10-kubernetes.md) and
+[Chapter 11](../tutorial/chapters/11-gitops-argocd.md) explain why: doing each layer by hand is
+what makes it possible to tell, when something fails, whether the problem is in the manifests or
+in ArgoCD's own machinery.
 
 ## Manual deploy (without ArgoCD)
 
@@ -138,6 +155,16 @@ running whatever `:latest` happened to resolve to at pull time.
 alongside it owns that number. Declaring a static count in git would fight the HPA every time
 ArgoCD's `selfHeal` runs, since selfHeal reverts anything that differs from what git declares, and
 an HPA-driven replica change looks exactly like drift from git's point of view.
+
+## Watching it from the dashboard
+
+`node dashboard/server.js`'s Infrastructure tab shows a read-only ArgoCD status strip — sync
+status, health status, and which `kubectl` context it's reading, polled every 20 seconds. It's
+read-only on purpose: a sync or rollback button is a real action with real consequences, and
+would need the same kind of confirmation the Spark Start/Stop buttons already have, not something
+bundled in as a side effect of a status check. It also degrades gracefully — if `kubectl` isn't
+installed, or no cluster is running, or ArgoCD was never set up on whatever cluster is current, it
+just says so plainly rather than erroring. That's the expected state for most clones of this repo.
 
 ## Useful commands
 
