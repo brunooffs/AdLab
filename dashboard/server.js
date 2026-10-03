@@ -60,22 +60,21 @@ const PROFILES = ['gateway', 'streaming', 'analytics', 'observability', 'extras'
 // prompted building this).
 const SPARK_MASTER_UI = 'http://localhost:8081';
 
-// Mirrors exactly the detection logic spark.sh's own "kill existing apps"
-// step already uses (an inline Python one-liner there) — ported here rather
-// than reinvented, since it's already the proven way to tell a live
-// application apart from a finished one on a Spark Standalone cluster.
+// `/json/` is the Spark Standalone Master's own status endpoint — confirmed
+// directly against a real running cluster (not assumed). An earlier version
+// of this function used `/api/v1/applications`, the Spark *History Server*'s
+// REST path — a component this project never deploys — which 404s as HTML,
+// not JSON. That version was only ever tested against a mock server that
+// encoded the same wrong assumption, so the "test" never actually caught it;
+// real evidence from a live cluster is what caught it.
 async function sparkAppStatus() {
   try {
-    const res = await fetch(`${SPARK_MASTER_UI}/api/v1/applications`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${SPARK_MASTER_UI}/json/`, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) return { reachable: false, running: false };
-    const apps = await res.json();
-    for (const a of apps) {
-      const attempts = a.attempts || [{}];
-      const first = attempts[0] || {};
-      const completed = first.completed === undefined ? true : first.completed;
-      if (!completed) {
-        return { reachable: true, running: true, appId: a.id, name: a.name, startTime: first.startTime };
-      }
+    const data = await res.json();
+    const running = (data.activeapps || []).find((a) => a.state === 'RUNNING');
+    if (running) {
+      return { reachable: true, running: true, appId: running.id, name: running.name, startTime: running.submitdate };
     }
     return { reachable: true, running: false };
   } catch {
@@ -83,16 +82,20 @@ async function sparkAppStatus() {
   }
 }
 
-// Same REST call spark.sh itself makes to clear a prior run before
-// resubmitting — reused here for an explicit Stop, rather than trying to
-// signal the `docker exec` process from outside (unreliable: killing the
-// local exec session does not reliably propagate into the container).
+// Matches the Spark Master UI's own "(kill)" link exactly: a plain HTML
+// <form method="POST" action="app/kill/"> with id/terminate as hidden
+// fields — form-urlencoded BODY data, not a query string. The previous
+// version sent them as a query string on the POST, which was never actually
+// confirmed against the real form markup, only assumed.
 async function sparkAppKill(appId) {
   try {
-    const res = await fetch(
-      `${SPARK_MASTER_UI}/app/kill/?id=${encodeURIComponent(appId)}&terminate=true`,
-      { method: 'POST', signal: AbortSignal.timeout(5000) }
-    );
+    const body = new URLSearchParams({ id: appId, terminate: 'true' });
+    const res = await fetch(`${SPARK_MASTER_UI}/app/kill/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      signal: AbortSignal.timeout(5000),
+    });
     return res.ok;
   } catch {
     return false;
