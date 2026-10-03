@@ -126,6 +126,15 @@
       <span class="sparkstate" id="argoState">checking…</span>
       <div class="spacer"></div>
       <span class="sparkstate" id="argoContext"></span>
+      <button id="btnArgoHelp" style="font-size:11.5px; padding:4px 9px;">How do I open this?</button>
+    </div>
+    <div class="sparklog" id="argoHelp" style="max-height:none; font: 12px ui-monospace, Menlo, monospace;">
+      <div class="sub" style="margin-bottom:6px;">ArgoCD's UI isn't exposed anywhere by default — it needs a port-forward, and only stays reachable while that keeps running in a terminal:</div>
+      <div>kubectl port-forward svc/argocd-server -n argocd 8090:443</div>
+      <div class="sub" style="margin:8px 0 2px;">Then open, accepting the self-signed cert warning:</div>
+      <div>https://localhost:8090</div>
+      <div class="sub" style="margin:8px 0 2px;">Login is admin / whatever this prints:</div>
+      <div>kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d</div>
     </div>
   </div>
 
@@ -432,6 +441,10 @@ async function refreshArgoStatus() {
 }
 refreshArgoStatus();
 setInterval(refreshArgoStatus, 20000);
+
+document.getElementById('btnArgoHelp').addEventListener('click', () => {
+  document.getElementById('argoHelp').classList.toggle('show');
+});
 
 // ── Tutorials ────────────────────────────────────────────────────────────
 // Minimal Markdown-subset renderer — deliberately not a general parser.
