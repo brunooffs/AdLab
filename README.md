@@ -163,8 +163,8 @@ them consistent.
 
 | Script | Purpose |
 |---|---|
-| `./start.sh [profile ...]` | start services (health-gated); `all` = every profile except `extras` |
-| `./stop.sh` | stop everything, keep data |
+| `./start.sh [profile ...] [--no-dashboard]` | start services (health-gated); `all` = every profile except `extras`; also starts the local dashboard at `localhost:4400` unless `--no-dashboard` is passed |
+| `./stop.sh` | stop everything, keep data — including the dashboard, if `start.sh` started it |
 | `./reset.sh [--yes]` | remove this project's containers **and volumes** (touches nothing else) |
 | `./status.sh` | health, memory, indices, topics, table counts |
 | `./produce.sh [events] [rate] [flags]` | send click events, e.g. `--hot-ad ad_x --buckets 4` |
