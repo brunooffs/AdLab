@@ -147,6 +147,9 @@ jobs:
       pull-requests: read   # dorny/paths-filter needs this to query changed files via the API
     outputs:
       api: ${{ steps.filter.outputs.api }}
+      producer: ${{ steps.filter.outputs.producer }}
+      agent: ${{ steps.filter.outputs.agent }}
+      spark: ${{ steps.filter.outputs.spark }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v4
@@ -155,23 +158,57 @@ jobs:
           filters: |
             api:
               - 'api/**'
+            producer:
+              - 'producer/**'
+            agent:
+              - 'agent/**'
+            spark:
+              - 'spark/**'
 
   build-pr:
-    name: API — build only (no push)
+    name: Build changed Dockerfiles (no push)
     runs-on: ubuntu-latest
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.api == 'true'
+    if: github.event_name == 'pull_request' && (needs.changes.outputs.api == 'true' || needs.changes.outputs.producer == 'true' || needs.changes.outputs.agent == 'true' || needs.changes.outputs.spark == 'true')
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-      - name: Build (no push)
+      - name: Build api (no push)
+        if: needs.changes.outputs.api == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./api
           file: ./api/Dockerfile
           push: false
           platforms: linux/arm64,linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build producer (no push)
+        if: needs.changes.outputs.producer == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./producer
+          file: ./producer/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build agent (no push)
+        if: needs.changes.outputs.agent == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./agent
+          file: ./agent/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build spark (no push)
+        if: needs.changes.outputs.spark == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./spark
+          file: ./spark/Dockerfile
+          push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -263,3 +300,42 @@ jobs:
           # — but it stays as a clear, load-bearing signal of intent in the
           # commit log if either of those facts ever changes.
           git push
+
+  # ── Real correctness gate: brings up core+streaming and runs the actual
+  # end-to-end checks, not just "does it build". Every CI job above this one
+  # can go green on a change that compiles fine and still breaks the running
+  # pipeline — this is the one that would have caught that directly, the
+  # same way it caught real regressions throughout this project's history.
+  integration:
+    name: Integration test (smoke + e2e)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.ref == 'refs/heads/main' || needs.changes.outputs.api == 'true' || needs.changes.outputs.producer == 'true' || needs.changes.outputs.spark == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Elasticsearch needs a higher vm.max_map_count than this runner's default
+        # Confirmed directly: every real project running Elasticsearch in
+        # GitHub Actions sets this explicitly first — the runner's own
+        # default isn't high enough, the same limit that broke a real
+        # Linux machine earlier in this project's own history.
+        run: sudo sysctl -w vm.max_map_count=262144
+
+      - name: Start core + streaming
+        run: ./start.sh streaming --no-dashboard
+
+      - name: Smoke test
+        run: bin/smoke.sh
+
+      - name: End-to-end test
+        run: bin/e2e.sh
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose --profile streaming --profile tools logs --tail=200
+
+      - name: Tear down
+        if: always()
+        run: ./stop.sh
