@@ -163,8 +163,8 @@ them consistent.
 
 | Script | Purpose |
 |---|---|
-| `./start.sh [profile ...]` | start services (health-gated); `all` = every profile except `extras` |
-| `./stop.sh` | stop everything, keep data |
+| `./start.sh [profile ...] [--no-dashboard]` | start services (health-gated); `all` = every profile except `extras`; also starts the local dashboard at `localhost:4400` unless `--no-dashboard` is passed |
+| `./stop.sh` | stop everything, keep data — including the dashboard, if `start.sh` started it |
 | `./reset.sh [--yes]` | remove this project's containers **and volumes** (touches nothing else) |
 | `./status.sh` | health, memory, indices, topics, table counts |
 | `./produce.sh [events] [rate] [flags]` | send click events, e.g. `--hot-ad ad_x --buckets 4` |
@@ -187,11 +187,13 @@ docs/                design reference
 docker-compose.yml   the whole stack, split into profiles
 ```
 
-## Kubernetes and GitOps (experimental)
+## Kubernetes and GitOps
 
 `k8s/` holds manifests for the **API tier only** (PostgreSQL, Redis, Elasticsearch, API) and an
-ArgoCD application that syncs them from this repository. It is not covered by `bin/e2e.sh`, has no
-Kafka or Spark, and is being reviewed — treat it as a starting point, not a tested path.
+ArgoCD application that syncs them from this repository. It's a separate path from the Quick Start
+above — needs its own tools installed first (minikube, kubectl), and everything from there is run
+by hand rather than through a single script, deliberately — see [`k8s/README.md`](k8s/README.md)
+for the full setup and why. It is not covered by `bin/e2e.sh` and has no Kafka or Spark.
 
 ## Known limitations
 

@@ -15,6 +15,7 @@ venv/
 # Logs and local test artifacts
 *.log
 .e2e-logs/
+.dashboard.pid   # .dashboard.log is already covered by *.log above
 
 # OS
 .DS_Store

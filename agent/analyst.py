@@ -19,11 +19,17 @@ import sys
 
 import requests
 from google import genai
+from google.genai import types
 
 API_BASE = os.getenv("API_BASE_URL", "http://api:3000")
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 REQUEST_TIMEOUT = 10
 MAX_TOOL_TURNS = 6  # hard cap so a confused model can't loop forever
+GEMINI_TIMEOUT_MS = 60_000  # HttpOptions.timeout is milliseconds, not seconds —
+# confirmed by inspecting the real installed SDK, not assumed. Without this,
+# a stalled connection to Gemini's API hangs the whole script forever with
+# zero output and zero error — exactly what "running forever, no output"
+# looks like from the dashboard's log pane.
 
 
 # ── Tools: thin wrappers around AdLab's own real endpoints ─────────────────
@@ -162,9 +168,13 @@ def main():
         print("ERROR: GEMINI_API_KEY is not set. Copy .env.example to .env and add your key.")
         sys.exit(1)
 
-    client = genai.Client()
+    client = genai.Client(http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS))
     print(f"Question: {args.question}\n")
-    answer = run(client, args.question)
+    try:
+        answer = run(client, args.question)
+    except Exception as e:
+        print(f"\n=== Error ===\n{type(e).__name__}: {e}")
+        sys.exit(1)
     print(f"\n=== Answer ===\n{answer}")
 
 
