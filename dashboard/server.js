@@ -288,6 +288,7 @@ const TUTORIALS = [
   { id: '11', title: 'GitOps with ArgoCD', file: '11-gitops-argocd.md', available: true },
   { id: '12', title: 'CI/CD with GitHub Actions', file: '12-cicd.md', available: true },
   { id: '13', title: 'Capstone: debug a broken system', file: '13-capstone.md', available: false },
+  { id: '14', title: 'Helm: installing ArgoCD the more common way', file: '14-helm-argocd.md', available: true },
 ];
 const TUTORIAL_DIR = path.join(REPO_ROOT, 'tutorial', 'chapters');
 

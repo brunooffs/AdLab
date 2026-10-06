@@ -156,6 +156,25 @@ alongside it owns that number. Declaring a static count in git would fight the H
 ArgoCD's `selfHeal` runs, since selfHeal reverts anything that differs from what git declares, and
 an HPA-driven replica change looks exactly like drift from git's point of view.
 
+## Installing ArgoCD via Helm (alternative)
+
+The manual steps above install ArgoCD from its raw manifest — direct, no extra tooling, and what
+this project's own cluster actually runs. Helm is genuinely the more common way to do this in
+practice, though, and worth knowing: it packages the same manifests as a versioned, parameterized
+chart instead of one large static YAML file. [Chapter 14](../tutorial/chapters/14-helm-argocd.md)
+covers this as a real, deliberate comparison between the two.
+
+```bash
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+helm install argocd-helm argo/argo-cd --namespace argocd-helm --create-namespace
+```
+
+A separate namespace (`argocd-helm`, not `argocd`) and release name on purpose — this installs
+*alongside* the existing ArgoCD, not in place of it, so there's no risk of Helm colliding with
+resources it doesn't know it doesn't own. It's meant as a side-by-side comparison, not a
+replacement; see the chapter for why, and for cleaning it up afterward with `helm uninstall`.
+
 ## Watching it from the dashboard
 
 `node dashboard/server.js`'s Infrastructure tab shows a read-only ArgoCD status strip — sync

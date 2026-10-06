@@ -11,6 +11,7 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 ok()  { echo -e "  ${GREEN}✓${NC} $1"; }
 bad() { echo -e "  ${RED}✗${NC} $1"; FAILED=1; }
+opt() { echo -e "  ${YELLOW}○${NC} $1"; }
 FAILED=0
 
 echo "K8s/ArgoCD preflight:"
@@ -32,6 +33,12 @@ if command -v docker >/dev/null 2>&1; then
   ok "docker (minikube's default driver)"
 else
   bad "docker not found — needed as minikube's driver (see bin/preflight.sh for the Compose-side Docker checks)"
+fi
+
+if command -v helm >/dev/null 2>&1; then
+  ok "helm ($(helm version --short 2>/dev/null || echo 'version unknown'))"
+else
+  opt "helm not found — only needed for the Helm-based ArgoCD install (Chapter 14). Install: https://helm.sh/docs/intro/install/"
 fi
 
 echo
