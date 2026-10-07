@@ -47,7 +47,13 @@ except Exception:
 ' "$1"
 }
 
-TS=$(date +%s)
+# $(date +%s) alone is second-resolution — two invocations within the same
+# second (this script calls itself from e2e.sh right after a standalone CI
+# run of it) produce the same TS and collide on the unique email below.
+# $RANDOM is reseeded per process and makes that collision practically
+# impossible, on both GNU and BSD bash — no dependency on a `date` extension
+# that macOS's date doesn't support.
+TS="$(date +%s)-$RANDOM"
 echo "AdLab smoke test → $BASE"
 
 http GET /health

@@ -326,9 +326,14 @@ jobs:
       - name: Start core + streaming
         run: ./start.sh streaming --no-dashboard
 
-      - name: Smoke test
-        run: bin/smoke.sh
-
+      # e2e.sh already runs bin/smoke.sh itself as its first step, and
+      # reports a smoke failure clearly on its own — a standalone step here
+      # was pure duplication. Worse: back-to-back with no gap between the
+      # two invocations, both using $(date +%s) for a "unique" email, this
+      # is exactly what caused run #66 to fail (two smoke.sh runs within
+      # the same second collided on the same generated email). Fixed at the
+      # source in smoke.sh too (see bin/smoke.sh), but removing the
+      # redundant call here removes the actual trigger.
       - name: End-to-end test
         run: bin/e2e.sh
 
