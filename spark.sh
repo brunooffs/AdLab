@@ -25,22 +25,35 @@ fi
 
 # Kill any existing running Spark applications
 echo -e "${YELLOW}Killing any existing Spark applications...${NC}"
-RUNNING_APPS=$(curl -s "http://localhost:8081/api/v1/applications" 2>/dev/null | \
+# /api/v1/applications is the Spark History Server's REST API — this stack
+# never deploys a History Server, so that endpoint always 404s and this
+# check silently found nothing, every time, even with a job genuinely
+# running. The real Standalone Master (what's actually running on :8081)
+# exposes its own state at /json/ instead — the same endpoint the
+# dashboard's Spark status lane already uses for this same reason. Left
+# undetected, each new ./spark.sh run piled a fresh submission on top of
+# whatever was still alive, and the new job just starved for cores/memory
+# the old one never released (confirmed directly: a job from a previous
+# run silently held both worker cores, and the next run hung forever on
+# "Initial job has not accepted any resources").
+RUNNING_APPS=$(curl -s "http://localhost:8081/json/" 2>/dev/null | \
   python3 -c "
 import sys, json
 try:
-    apps = json.load(sys.stdin)
-    for a in apps:
-        attempts = a.get('attempts', [{}])
-        if attempts and not attempts[0].get('completed', True):
+    data = json.load(sys.stdin)
+    for a in data.get('activeapps', []):
+        if a.get('state') == 'RUNNING':
             print(a['id'])
-except:
+except Exception:
     pass
 " 2>/dev/null)
 
 if [ -n "$RUNNING_APPS" ]; then
   for app in $RUNNING_APPS; do
-    curl -s -X POST "http://localhost:8081/app/kill/?id=${app}&terminate=true" > /dev/null
+    # Match the real kill form the Master UI actually submits: a
+    # form-urlencoded POST body, not query-string parameters.
+    curl -s -X POST "http://localhost:8081/app/kill/" \
+      --data "id=${app}&terminate=true" > /dev/null
     echo "  Killed: $app"
   done
   sleep 5
