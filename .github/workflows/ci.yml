@@ -172,7 +172,7 @@ jobs:
     if: github.event_name == 'pull_request' && (needs.changes.outputs.api == 'true' || needs.changes.outputs.producer == 'true' || needs.changes.outputs.agent == 'true' || needs.changes.outputs.spark == 'true')
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
       - name: Build api (no push)
         if: needs.changes.outputs.api == 'true'
@@ -233,7 +233,7 @@ jobs:
         # uppercase letters in its username — cheap insurance either way.
         run: echo "name=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]' | sed 's#/adlab-lab$#/adlab-api#')" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
@@ -313,7 +313,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || needs.changes.outputs.api == 'true' || needs.changes.outputs.producer == 'true' || needs.changes.outputs.spark == 'true'
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
 
       - name: Elasticsearch needs a higher vm.max_map_count than this runner's default
