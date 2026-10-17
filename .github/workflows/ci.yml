@@ -29,7 +29,7 @@ jobs:
     name: API — lint & type check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -58,7 +58,7 @@ jobs:
           --health-timeout 3s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -95,7 +95,7 @@ jobs:
     name: Validate infrastructure configs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -151,7 +151,7 @@ jobs:
       agent: ${{ steps.filter.outputs.agent }}
       spark: ${{ steps.filter.outputs.spark }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -171,7 +171,7 @@ jobs:
     needs: changes
     if: github.event_name == 'pull_request' && (needs.changes.outputs.api == 'true' || needs.changes.outputs.producer == 'true' || needs.changes.outputs.agent == 'true' || needs.changes.outputs.spark == 'true')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Build api (no push)
@@ -224,7 +224,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Lowercase image name
         id: image
@@ -312,7 +312,7 @@ jobs:
     needs: changes
     if: github.ref == 'refs/heads/main' || needs.changes.outputs.api == 'true' || needs.changes.outputs.producer == 'true' || needs.changes.outputs.spark == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
