@@ -1,0 +1,8 @@
+# The MCP SDK: 2.x is the line that implements the 2026-07-28 stateless spec
+# (verified in Chapter 15 — 1.x still speaks the initialize/session protocol).
+mcp==2.3.0
+# NOT used for anything Gemini-related. agent/analyst.py imports google.genai
+# at module top level, and this server imports analyst.py to reuse its tool
+# functions unchanged — so the import has to resolve. See Chapter 15.
+google-genai==2.27.0
+requests==2.34.2
