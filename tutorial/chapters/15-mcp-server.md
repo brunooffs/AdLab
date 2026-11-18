@@ -219,6 +219,19 @@ Not everything was a straight line, and the cheap-to-fix failures are the useful
   defines no prompts or resources. It's harmless to the client I tested with, but it's the SDK's
   default for `MCPServer`, not something I chose, and it's slightly misleading advertising. If you
   care, that's the next thing to tighten.
+- **A second MCP-adjacent tool fought over the same SDK.** Testing with a real third-party client
+  (`ollmcp`, below) meant installing `mcp-client-for-ollama`, which pins its own `mcp` —
+  `2.1.1` at the time, not this server's `2.3.0`. With no virtualenv isolating the server, installing
+  `ollmcp` silently downgraded the *global* `mcp` package out from under it. The server then crashed
+  on startup, and nothing said why: `ollmcp` reported "3/3 tools" as zero, with no error surfaced
+  anywhere in its UI. Running `server.py` directly, with no client in the way, showed the real
+  traceback — an `ImportError` inside `agent/analyst.py` (`from google import genai`), a downstream
+  symptom of the same version collision, not a separate bug. Fixed by giving the server its own
+  virtualenv (`mcp-server/.venv`, this chapter's pinned `requirements.txt`) and pointing the client's
+  `command` at that venv's Python by absolute path, instead of whatever `python3` happens to resolve
+  on `$PATH` when the client launches it. The general lesson, not specific to `ollmcp`: two
+  MCP-adjacent Python packages with incompatible `mcp` pins cannot share one global environment, and
+  the failure mode is silent rather than a clear version error.
 
 ## What I could verify, and what I couldn't
 
@@ -226,15 +239,16 @@ Not everything was a straight line, and the cheap-to-fix failures are the useful
 handshake and no session (raw JSON-RPC); the official SDK client negotiates 2026-07-28; all three
 tools return live data from the real API running in the compose stack; argument
 validation failures are reported as tool errors; the unreachable-API path returns the agent's
-`{"error": ...}` payload; the server exits 0 on stdin EOF; `agent/` is unmodified.
+`{"error": ...}` payload; the server exits 0 on stdin EOF; `agent/` is unmodified; and — separately
+from all of the above — a genuinely independent third-party client, `ollmcp` talking to a local
+Ollama model rather than the SDK's own client, discovered, enabled and called the tools against the
+live stack and got the right data back (see "Trying it with your own client," below).
 
 **Not verified:**
 
-- **A real third-party client.** I never connected Claude Desktop, an IDE, or anyone else's MCP
-  client. Everything above is my own raw script plus the SDK's own client — which is the same SDK
-  family as the server, so it could share a misreading of the spec that an independent client
-  wouldn't. The raw Part 1 check is the partial defence (I wrote the messages from the spec text, not
-  from the SDK), but it isn't independent proof. If you try Claude Desktop and it disagrees, believe it.
+- **Still only one independent client.** `ollmcp` is a real data point, not full coverage: Claude
+  Desktop, an IDE's built-in client, and anything that talks HTTP instead of stdio are still
+  untested.
 - **Version-mismatch behavior.** The spec says a server should answer an unsupported
   `protocolVersion` with `UnsupportedProtocolVersionError` (code `-32022`). I didn't send one.
 - **The `draft` spec.** I confirmed nothing dated is newer than 2026-07-28, but I didn't read the
@@ -246,8 +260,9 @@ validation failures are reported as tool errors; the unreachable-API path return
 
 ## Trying it with your own client
 
-An MCP client config entry is just the command to launch (shown in the common `mcpServers` JSON
-shape; I did not test this in any client):
+An MCP client config entry is just the command to launch, in the common `mcpServers` JSON shape (this
+is also the shape Claude Desktop and most other stdio-based hosts use, though I haven't tested those
+specifically):
 
 ```json
 {
@@ -261,10 +276,71 @@ shape; I did not test this in any client):
 }
 ```
 
-Use the venv's Python by absolute path — a client launching `python` bare won't have the SDK. The
+Use the venv's Python by absolute path — a client launching `python` bare won't have the SDK, and (see
+"What went wrong," above) a *different* venv's Python can have the wrong `mcp` version entirely. The
 stack has to be up, and `produce.sh` + `spark.sh` have to have run recently, or `get_trending_ads`
 will honestly return an empty list (trending covers only the last 10 minutes; I saw exactly that
 before producing events).
+
+I did test this, with a client that isn't the SDK's own: [`ollmcp`](https://pypi.org/project/mcp-client-for-ollama/)
+(`mcp-client-for-ollama`), a terminal client built for wiring a locally-served
+[Ollama](https://ollama.com) model up to MCP tools. It's a separately-maintained implementation, and
+the model runs fully offline — no vendor account, no API key, nothing leaves the machine.
+
+```bash
+pip install --upgrade ollmcp
+cp mcp-server/ollmcp-servers.json.example mcp-server/ollmcp-servers.json   # then edit the path
+ollmcp -j mcp-server/ollmcp-servers.json -m qwen2.5:14b                   # your own model
+```
+
+It connected, found all three tools, and I asked a plain-English question rather than naming a tool:
+
+```
+Found server in config: adlab
+Connecting to server: adlab
+  adlab has resources capability but returned none
+Successfully connected to adlab with 3 tool(s)
+
+qwen2.5/3-tools❯ What are the trending ads right now?
+
+╭─ 🔧 Executing Tool adlab.get_trending_ads ─╮
+│  Arguments: { "limit": 5 }                 │
+╰─────────────────────────────────────────────╯
+
+🧑‍💻 Human-in-the-Loop Confirmation
+Tool to execute: adlab.get_trending_ads
+Arguments:
+  • limit: 5
+What would you like to do? (y): y
+
+╭─ ✅ Tool Response adlab.get_trending_ads ─╮
+│  {                                        │
+│    "as_of": "2026-11-18T12:29:37.573Z",   │
+│    "ads": [                               │
+│      {"ad_id": "ad_cmuycryf_002", "clicks": 6},
+│      {"ad_id": "ad_cmus7z8x_003", "clicks": 3},
+│      {"ad_id": "ad_cmuyb1yg_003", "clicks": 3},
+│      {"ad_id": "ad_cmuycs4k_001", "clicks": 3},
+│      {"ad_id": "ad_cmuycs4k_002", "clicks": 3}
+│    ]                                      │
+│  }                                        │
+╰────────────────────────────────────────────╯
+
+📝 Answer:
+Here are the top 5 trending ads as of 2026-11-18T12:29:37.573Z:
+ 1. ad_cmuycryf_002 — 6 clicks
+ 2. ad_cmus7z8x_003 — 3 clicks
+ 3. ad_cmuyb1yg_003 — 3 clicks
+ 4. ad_cmuycs4k_001 — 3 clicks
+ 5. ad_cmuycs4k_002 — 3 clicks
+```
+
+Qwen chose `get_trending_ads` on its own — I never named a tool — picked a sensible `limit`, and the
+numbers match what the live stack had at that moment. The human-in-the-loop prompt is `ollmcp`'s own
+safety default (`/tools` → `hil` turns it off), not something this server asks for.
+
+That's one independent client, on one transport. Claude Desktop, an IDE's built-in client, and
+anything over HTTP are still untested.
 
 ## What's next
 
