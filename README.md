@@ -126,6 +126,13 @@ cd mcp-server && python3 -m venv .venv && .venv/bin/pip install -r requirements.
 ADLAB_API_URL=http://localhost:3000 .venv/bin/python verify_client.py   # needs the stack + some clicks
 ```
 
+Tested against a real third-party client, not just the SDK's own:
+[`ollmcp`](https://pypi.org/project/mcp-client-for-ollama/) talking to a local
+[Ollama](https://ollama.com) model — fully offline, no vendor account or API key needed. Copy
+`mcp-server/ollmcp-servers.json.example` to `ollmcp-servers.json`, point `command` at this venv's
+Python by absolute path, then `ollmcp -j mcp-server/ollmcp-servers.json -m <your-model>`. Details and
+why the path has to be absolute are in Chapter 15.
+
 ## Verify it works
 
 Two scripts make the environment testable, and are meant to be run after every change or upgrade:
