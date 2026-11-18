@@ -113,6 +113,32 @@ curl -s 'localhost:3000/v1/metrics/trending?limit=5'
 
 In Kibana open *AdLab — Ad Click Analytics* and set the time range to cover your events.
 
+## Analyst agent
+
+`agent/analyst.py` is a small read-only agent: ask it a plain-English question, it calls the same
+three tools `mcp-server/` exposes, and prints a synthesized answer. Nothing it does writes
+anything — every tool is a `GET` against an endpoint that already exists.
+
+Two backends, picked by `AGENT_BACKEND`:
+
+- **`ollama`** (default) — a local model via [Ollama](https://ollama.com). No API key, no vendor
+  account, no rate limit. Needs a model pulled once (`ollama pull qwen2.5:7b`); `./start.sh`
+  starts Ollama's daemon for you if it's installed (see "MCP server," below) but never pulls a
+  model — that's a per-machine, per-bandwidth decision this project doesn't make for you.
+- **`gemini`** (opt-in) — Google's hosted API, for sharper answers if you already have a
+  `GEMINI_API_KEY` (see `.env.example`). Not an automatic fallback for the other — one backend
+  answers each run, and why that's deliberate is in [Chapter 16](tutorial/chapters/16-ollama-agent.md).
+
+```bash
+ollama pull qwen2.5:7b                                              # once
+docker compose --profile agent run --rm agent "What's trending right now?"
+
+AGENT_BACKEND=gemini docker compose --profile agent run --rm agent "..."   # opt-in, needs a key
+```
+
+Design tradeoffs, the two SDKs' different tool-call shapes, and the Linux/Docker-Desktop networking
+detail (`host.docker.internal`) are in Chapter 16.
+
 ## MCP server
 
 `mcp-server/` re-exposes the analyst agent's three read-only tools (`get_trending_ads`,
@@ -210,7 +236,7 @@ api/                 Fastify 5 + TypeScript API: REST, GraphQL, CQRS, Prisma, Op
 producer/            click-event generator (runs in a container)
 spark/               Spark image with pinned connectors
 spark-jobs/          the PySpark streaming job and a stoppable runner
-agent/ mcp-server/   Gemini analyst agent; MCP server exposing the same tools (Chapter 15)
+agent/ mcp-server/   analyst agent, Ollama by default/Gemini optional (Ch. 16); MCP server exposing the same tools (Ch. 15)
 kong/ prometheus/ grafana/ tempo/   gateway, metrics, dashboards, tracing configuration
 kibana-backup.ndjson   Kibana data views and dashboard
 k8s/                 Kustomize manifests and the ArgoCD application (experimental)

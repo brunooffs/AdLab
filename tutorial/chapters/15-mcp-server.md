@@ -2,7 +2,7 @@
 
 ## What you'll do
 
-Take the three read-only tools the Gemini analyst agent already uses (`get_trending_ads`,
+Take the three read-only tools the analyst agent already uses (`get_trending_ads`,
 `get_ad_clicks`, `get_advertisers`) and expose them through the Model Context Protocol, so *any*
 MCP client — not just my one script — can query live AdLab data. Then prove it works by talking to
 it twice: once with hand-written JSON-RPC, once with the official SDK client.
@@ -13,7 +13,9 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ADLAB_API_URL=http://localhost:3000 .venv/bin/python verify_client.py
 ```
 
-Nothing here touches `agent/`. The Gemini experiment is exactly as it was.
+Nothing here touches `agent/`. The agent experiment is exactly as it was. (At the time this chapter
+was written, that agent only spoke Gemini — Chapter 16 later made it dual-backend. Nothing below
+changed as a result; see that chapter's note on the "dependency that does nothing" cost, below.)
 
 ## What MCP actually is
 
@@ -93,6 +95,10 @@ This has real costs, and I'd rather say so than pretend it's free:
    splitting the HTTP tool functions out of `analyst.py` into a shared module, but that means editing
    the working agent, which this chapter deliberately doesn't do. If you ever do that refactor,
    `server.py` shrinks to just its import line changing.
+   *(Resolved in Chapter 16: `analyst.py` became dual-backend — Ollama by default, Gemini optional —
+   and that refactor made both SDK imports lazy as a side effect, for exactly this reason. Neither is
+   in `mcp-server/requirements.txt` anymore. The historical cost above is left as written, since it's
+   the reasoning that motivated the fix, not a claim still true today.)*
 2. **Config is read at import time.** `analyst.py` reads `API_BASE_URL` once, when imported, and
    defaults to `http://api:3000` — a hostname that only exists *inside* the compose network. So
    `server.py` sets `API_BASE_URL` (from `ADLAB_API_URL`, default `http://localhost:3000`) *before*

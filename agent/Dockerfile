@@ -4,6 +4,7 @@
 FROM python:3.11-slim
 WORKDIR /app
 RUN pip install --no-cache-dir \
+    ollama==0.6.3 \
     google-genai==2.27.0 \
     requests==2.34.2
 COPY analyst.py ./

@@ -2,10 +2,12 @@
 """
 AdLab MCP server — read-only analytics tools over stdio, MCP spec 2026-07-28.
 
-Re-exposes the three tools the Gemini analyst agent already uses
-(agent/analyst.py) through the Model Context Protocol. The query logic is NOT
-reimplemented: the tool bodies here call the agent's own functions, imported
-as-is. This file only adds the protocol surface.
+Re-exposes the three tools the analyst agent already uses (agent/analyst.py,
+Chapter 16 — Ollama by default, Gemini optional) through the Model Context
+Protocol. The query logic is NOT reimplemented: the tool bodies here call
+the agent's own functions, imported as-is. This file only adds the protocol
+surface, and needs neither of analyst.py's two optional SDKs itself — see
+mcp-server/requirements.txt.
 
 Spec notes (2026-07-28, stateless):
   - No initialize handshake and no session: every request carries its own

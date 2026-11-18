@@ -1,2 +1,7 @@
+# Ollama is the default backend (AGENT_BACKEND=ollama) — no API key needed.
+ollama==0.6.3
+# Gemini is opt-in (AGENT_BACKEND=gemini) — kept installed so the same image
+# supports both backends without a rebuild, but analyst.py imports this
+# lazily, so it's only ever touched if you actually pick that backend.
 google-genai==2.27.0
 requests==2.34.2

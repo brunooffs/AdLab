@@ -363,8 +363,20 @@ services:
     # producer (and kafka) into that validation at all.
     profiles: ["agent"]
     environment:
-      GEMINI_API_KEY: ${GEMINI_API_KEY}   # from .env — see .env.example
+      AGENT_BACKEND: ${AGENT_BACKEND:-ollama}
       API_BASE_URL: http://api:3000
+      # Ollama default: a local model, no key, no vendor account (Chapter 16).
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      # Gemini is opt-in (AGENT_BACKEND=gemini) — only required then. Leave
+      # unset for the Ollama default; see .env.example.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    extra_hosts:
+      # host.docker.internal is native to Docker Desktop (Mac/Windows); on
+      # Linux (Docker Engine 20.10+) it needs this explicit mapping, or the
+      # Ollama backend can't reach a host-run `ollama serve`. Harmless to
+      # leave in on Desktop — it's already provided there. See Chapter 16.
+      - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_healthy
