@@ -128,10 +128,21 @@ ADLAB_API_URL=http://localhost:3000 .venv/bin/python verify_client.py   # needs 
 
 Tested against a real third-party client, not just the SDK's own:
 [`ollmcp`](https://pypi.org/project/mcp-client-for-ollama/) talking to a local
-[Ollama](https://ollama.com) model — fully offline, no vendor account or API key needed. Copy
-`mcp-server/ollmcp-servers.json.example` to `ollmcp-servers.json`, point `command` at this venv's
-Python by absolute path, then `ollmcp -j mcp-server/ollmcp-servers.json -m <your-model>`. Details and
-why the path has to be absolute are in Chapter 15.
+[Ollama](https://ollama.com) model — fully offline, no vendor account or API key needed.
+
+If you already have [Ollama](https://ollama.com) installed, `./start.sh` checks for it and starts
+its daemon if it isn't running, same as it does for the dashboard — it never installs Ollama or
+pulls a model for you (that's a per-machine decision), and it prints the exact `ollmcp` command to
+try once it's up (`ADLAB_SKIP_OLLAMA=1` skips this check entirely). Otherwise, to try it by hand:
+
+```bash
+pip install --upgrade ollmcp
+cp mcp-server/ollmcp-servers.json.example mcp-server/ollmcp-servers.json   # then edit the path
+ollmcp -j mcp-server/ollmcp-servers.json -m <your-model>
+```
+
+Point `command` in that config at `mcp-server/.venv`'s Python by absolute path. Details, why the
+path has to be absolute, and a real captured session are in Chapter 15.
 
 ## Verify it works
 

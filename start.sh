@@ -10,6 +10,7 @@
 #    ./start.sh all                    gateway + streaming + analytics + observability
 #  Profiles: gateway streaming analytics observability extras
 #  ADLAB_SKIP_PREFLIGHT=1 skips the machine checks in bin/preflight.sh.
+#  ADLAB_SKIP_OLLAMA=1 skips the Ollama check below (see mcp-server/, Chapter 15).
 #  --no-dashboard skips starting the local control panel (dashboard/server.js) —
 #  useful for CI/automation, where an extra background Node process nobody
 #  asked for is more surprise than convenience.
@@ -110,6 +111,32 @@ if [ "$SKIP_DASHBOARD" -ne 1 ]; then
   start_dashboard
 fi
 
+# Ollama (optional, host-run, same spirit as Helm in bin/preflight.sh): if it's
+# here, make sure its daemon is reachable so mcp-server/ can be tried against a
+# real third-party MCP client (ollmcp) with no vendor account needed — see
+# Chapter 15. Never installs Ollama or pulls a model: model choice and disk/
+# bandwidth cost are per-machine decisions this script has no business making.
+OLLAMA_READY=0
+OLLAMA_MODEL=""
+check_ollama() {
+  if [ "${ADLAB_SKIP_OLLAMA:-0}" = "1" ]; then return; fi
+  if ! command -v ollama >/dev/null 2>&1; then return; fi
+  if ! curl -sf http://localhost:11434/api/version >/dev/null 2>&1; then
+    nohup ollama serve > .ollama.log 2>&1 &
+    for _ in $(seq 1 10); do
+      curl -sf http://localhost:11434/api/version >/dev/null 2>&1 && break
+      sleep 1
+    done
+  fi
+  if curl -sf http://localhost:11434/api/version >/dev/null 2>&1; then
+    OLLAMA_READY=1
+    OLLAMA_MODEL=$(ollama list 2>/dev/null | awk 'NR==2{print $1}')
+  else
+    echo -e "${YELLOW}ollama is installed but its daemon didn't come up — check .ollama.log${NC}"
+  fi
+}
+check_ollama
+
 echo -e "\n${YELLOW}Containers:${NC}"
 docker compose ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} ps --format "table {{.Name}}\t{{.Status}}"
 
@@ -122,10 +149,16 @@ has streaming     && { echo "  Kafka UI:      http://localhost:8080"; echo "  Sp
 has analytics     && echo "  Kibana:        http://localhost:5601"
 has observability && { echo "  Grafana:       http://localhost:3001  (admin/admin)"; echo "  Prometheus:    http://localhost:9090"; }
 [ "$DASHBOARD_STARTED" -eq 1 ] && echo "  Dashboard:     ${DASHBOARD_URL}"
+[ "$OLLAMA_READY" -eq 1 ] && echo "  Ollama:        http://localhost:11434"
 echo ""
 echo -e "${CYAN}Next steps:${NC}"
 echo "  ./bin/smoke.sh                 # verify the API end to end"
 has streaming && echo "  ./produce.sh 500 5             # send events, then ./spark.sh to aggregate them"
 has streaming || echo "  ./start.sh streaming           # add Kafka + Spark"
 echo "  ./status.sh                    # health of everything"
+if [ "$OLLAMA_READY" -eq 1 ] && [ -n "$OLLAMA_MODEL" ]; then
+  echo "  ollmcp -j mcp-server/ollmcp-servers.json -m ${OLLAMA_MODEL}   # try the MCP server, Chapter 15"
+elif [ "$OLLAMA_READY" -eq 1 ]; then
+  echo "  ollama pull qwen2.5:7b         # then try mcp-server/ (Chapter 15) with ollmcp"
+fi
 echo ""
