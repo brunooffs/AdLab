@@ -113,6 +113,19 @@ curl -s 'localhost:3000/v1/metrics/trending?limit=5'
 
 In Kibana open *AdLab — Ad Click Analytics* and set the time range to cover your events.
 
+## MCP server
+
+`mcp-server/` re-exposes the analyst agent's three read-only tools (`get_trending_ads`,
+`get_ad_clicks`, `get_advertisers`) as a [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio, built against the stateless **2026-07-28** spec. Any MCP client can launch it and
+query live AdLab data; `agent/` is untouched. Setup, verification output and caveats are in
+[Chapter 15](tutorial/chapters/15-mcp-server.md).
+
+```bash
+cd mcp-server && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+ADLAB_API_URL=http://localhost:3000 .venv/bin/python verify_client.py   # needs the stack + some clicks
+```
+
 ## Verify it works
 
 Two scripts make the environment testable, and are meant to be run after every change or upgrade:
@@ -179,6 +192,7 @@ api/                 Fastify 5 + TypeScript API: REST, GraphQL, CQRS, Prisma, Op
 producer/            click-event generator (runs in a container)
 spark/               Spark image with pinned connectors
 spark-jobs/          the PySpark streaming job and a stoppable runner
+agent/ mcp-server/   Gemini analyst agent; MCP server exposing the same tools (Chapter 15)
 kong/ prometheus/ grafana/ tempo/   gateway, metrics, dashboards, tracing configuration
 kibana-backup.ndjson   Kibana data views and dashboard
 k8s/                 Kustomize manifests and the ArgoCD application (experimental)
