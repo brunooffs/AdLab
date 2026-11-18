@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "adlab": {
+      "command": "/absolute/path/to/mcp-server/.venv/bin/python3",
+      "args": ["/absolute/path/to/mcp-server/server.py"],
+      "env": { "ADLAB_API_URL": "http://localhost:3000" }
+    }
+  }
+}
