@@ -289,6 +289,7 @@ const TUTORIALS = [
   { id: '12', title: 'CI/CD with GitHub Actions', file: '12-cicd.md', available: true },
   { id: '13', title: 'Capstone: debug a broken system', file: '13-capstone.md', available: false },
   { id: '14', title: 'Helm: installing ArgoCD the more common way', file: '14-helm-argocd.md', available: true },
+  { id: '15', title: 'An MCP server for AdLab (2026-07-28 stateless spec)', file: '15-mcp-server.md', available: true },
 ];
 const TUTORIAL_DIR = path.join(REPO_ROOT, 'tutorial', 'chapters');
 
