@@ -15,7 +15,12 @@ venv/
 # Logs and local test artifacts
 *.log
 .e2e-logs/
-.dashboard.pid   # .dashboard.log is already covered by *.log above
+# .dashboard.log is already covered by *.log above
+.dashboard.pid
+
+# Local MCP client config — has a machine-specific absolute path to this
+# machine's venv Python; see mcp-server/ollmcp-servers.json.example instead
+mcp-server/ollmcp-servers.json
 
 # OS
 .DS_Store
