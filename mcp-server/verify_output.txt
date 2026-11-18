@@ -1,0 +1,164 @@
+[adlab-mcp] starting on stdio, upstream http://localhost:3100
+[adlab-mcp] Tool 'get_ad_clicks' rejected arguments: ['from_ts', 'to_ts']
+=== Part 1: raw JSON-RPC over stdio, no SDK, no handshake ===
+
+--- server/discover response ---
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "cacheScope": "public",
+    "capabilities": {
+      "prompts": {
+        "listChanged": true
+      },
+      "resources": {
+        "listChanged": true,
+        "subscribe": true
+      },
+      "tools": {
+        "listChanged": true
+      }
+    },
+    "instructions": "Read-only access to AdLab's live ad-click analytics. Tool results are JSON; on upstream failure a tool returns {\"error\": ...} rather than raising.",
+    "resultType": "complete",
+    "supportedVersions": [
+      "2026-07-28"
+    ],
+    "ttlMs": 300000,
+    "_meta": {
+      "io.modelcontextprotocol/serverInfo": {
+        "name": "adlab",
+        "title": "AdLab analytics",
+        "version": "0.1.0"
+      }
+    }
+  }
+}
+
+--- tools/list response (names + cache hints) ---
+{
+  "names": [
+    "get_ad_clicks",
+    "get_advertisers",
+    "get_trending_ads"
+  ],
+  "ttlMs": 300000,
+  "cacheScope": "public",
+  "resultType": "complete"
+}
+
+--- server stderr (logs go here, not stdout) ---
+[adlab-mcp] starting on stdio, upstream http://localhost:3100
+
+server exited cleanly on stdin EOF (rc=0)
+
+=== Part 2: official SDK client ===
+negotiated protocol version: 2026-07-28
+server_info: name='adlab' title='AdLab analytics' version='0.1.0' description=None website_url=None icons=None
+instructions: Read-only access to AdLab's live ad-click analytics. Tool results are JSON; on upstream failure a tool returns {"error": ...} rather than raising.
+tools/list -> ['get_ad_clicks', 'get_advertisers', 'get_trending_ads'] ttl_ms=300000 scope=public
+
+--- get_advertisers ---
+{
+  "advertisers": [
+    {
+      "id": "cmuycs4l400079589ok8ugea1",
+      "name": "Smoke CQRS 1791392397-10923",
+      "email": "smoke-cqrs+1791392397-10923@example.com",
+      "tier": "STANDARD",
+      "createdAt": "2026-10-07T16:59:57.880Z",
+      "updatedAt": "2026-10-07T16:59:57.880Z",
+      "campaigns": []
+    },
+    {
+      "id": "cmuycs4i00004958908rwdggc",
+      "name": "Smoke 1791392397-10923",
+      "email": "smoke+1791392397-10923@example.com",
+      "tier": "PREMIUM",
+      "createdAt": "2026-10-07T16:59:57.769Z",
+      "updatedAt": "2026-10-07T16:59:57.769Z",
+      "campaigns": [
+        {
+          "id": "cmuycs4ke00069589wap3dojf",
+          "name": "Smoke campaign 1791392397-10923",
+          "advertiserId": "cmuycs4i00004958908rwdggc",
+          "budget": 50000,
+          "startDate": "2026-06-01T00:00:00.000Z",
+          "endDate": null,
+          "status": "ACTIVE",
+          "createdAt": "2026-10-07T16:59:57.855Z",
+          "updatedAt": "2026-10-07T16:59:57.855Z"
+        }
+      ]
+    },
+    {
+      "id": "cmuycryfv00039589kqb5kzbp",
+      "name": "Smoke CQRS 1791392389-13764",
+      "email": "smoke-cqrs+1791392389-13764@example.com",
+      "tier": "STANDARD",
+      "createdAt": "2026-10-07T16:59:49.915Z",
+      "updatedAt": "2026-10-07T16:59:49.915Z",
+      "campaigns": []
+    },
+    {
+      "id": "cmuycryba00009589po995mnv",
+      "name": "Smoke 1791392389-13764",
+      "email": "smoke+1791392389-13764@example.com",
+      "tier": "PREMIUM",
+      "createdAt": "2026-10-07T16:59:49.750Z",
+      "updatedAt": "2026-10-07T16:59:49.750Z",
+      "campaigns": [
+        {
+          "id": "cmuycryf100029589npb3iudy",
+          "name": "Smoke campaign 1791392389-13764",
+          "advertiserId": "cmuycryba00009589po995mnv",
+          "budget": 50000,
+       
+
+--- get_trending_ads(limit=5) ---
+{
+  "as_of": "2026-11-18T00:36:10.154Z",
+  "ads": [
+    {
+      "ad_id": "ad_cmuyb1yg_002",
+      "clicks": 8
+    },
+    {
+      "ad_id": "ad_cmuycs4k_001",
+      "clicks": 8
+    },
+    {
+      "ad_id": "ad_cmus7z8x_002",
+      "clicks": 7
+    },
+    {
+      "ad_id": "ad_cmus7z8x_001",
+      "clicks": 6
+    },
+    {
+      "ad_id": "ad_cmus84rx_002",
+      "clicks": 6
+    }
+  ]
+}
+
+--- get_ad_clicks(ad_cmuyb1yg_002, last hour) ---
+{
+  "ad_id": "ad_cmuyb1yg_002",
+  "from": 1794958570,
+  "to": 1794962170,
+  "clicks": 8,
+  "as_of": "2026-11-18T00:36:10.168Z",
+  "breakdown": {
+    "confirmed": 8,
+    "in_progress": 0
+  }
+}
+
+missing-args call -> is_error=True: Error executing tool get_ad_clicks: 2 validation errors for get_ad_clicksArguments
+from_ts
+  Field required [type=missing, input_value={'ad_id': 'ad_cmuyb1yg_002'}, input_type=dict]
+    For further in
+
+ALL CHECKS PASSED
